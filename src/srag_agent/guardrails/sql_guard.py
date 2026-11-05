@@ -2,15 +2,19 @@
 
 Defence in depth: (1) DuckDB's own parser must see exactly one SELECT statement,
 (2) a keyword blocklist rejects anything that could read files, change settings or
-mutate data, (3) every relation referenced must be in the whitelist, (4) the query is
-wrapped in an outer LIMIT, (5) the connection is read-only with external access disabled
-and (6) execution is interrupted after a timeout (see `tools/sql_tool.py`).
+mutate data, (3) every relation in the parsed AST must be in the whitelist and table
+functions are refused, (4) the query is wrapped in an outer LIMIT, (5) the connection is
+read-only with external access disabled and (6) execution is interrupted after a timeout
+(see `tools/sql_tool.py`).
 """
 
 from __future__ import annotations
 
+import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from functools import cache
+from typing import Any
 
 import duckdb
 
@@ -23,8 +27,6 @@ BLOCKED_KEYWORDS = re.compile(
     r")\b",
     re.IGNORECASE,
 )
-_RELATION_REFERENCE = re.compile(r"\b(?:FROM|JOIN)\s+([A-Za-z_][\w.]*)", re.IGNORECASE)
-_CTE_NAME = re.compile(r"(?:\bWITH\b|,)\s*([A-Za-z_]\w*)\s+AS\s*\(", re.IGNORECASE)
 _COMMENT = re.compile(r"--[^\n]*|/\*.*?\*/", re.DOTALL)
 
 
@@ -34,10 +36,23 @@ class SqlRejected(ValueError):
 
 @dataclass(frozen=True)
 class GuardedSql:
-    original: str
     executable: str
     relations: tuple[str, ...]
-    row_limit: int
+
+
+@dataclass
+class _Relations:
+    """Tables, table functions and CTE names found while walking the parsed AST."""
+
+    tables: list[str] = field(default_factory=list)
+    functions: list[str] = field(default_factory=list)
+    ctes: set[str] = field(default_factory=set)
+
+
+@cache
+def _parser() -> duckdb.DuckDBPyConnection:
+    """In-memory connection used only to serialise the AST (no catalog, no file access)."""
+    return duckdb.connect(":memory:", config={"enable_external_access": "false"})
 
 
 def _strip_comments(sql: str) -> str:
@@ -66,14 +81,39 @@ def _check_blocklist(sql: str) -> None:
         raise SqlRejected(msg)
 
 
+def _walk(node: Any, found: _Relations) -> None:
+    if isinstance(node, dict):
+        if node.get("type") == "BASE_TABLE":
+            found.tables.append(str(node.get("table_name", "")).lower())
+        elif node.get("type") == "TABLE_FUNCTION":
+            found.functions.append(str(node["function"].get("function_name", "")).lower())
+        for entry in node.get("cte_map", {}).get("map", []):
+            found.ctes.add(str(entry.get("key", "")).lower())
+        for value in node.values():
+            _walk(value, found)
+    elif isinstance(node, list):
+        for value in node:
+            _walk(value, found)
+
+
 def _referenced_relations(sql: str) -> tuple[str, ...]:
-    cte_names = {name.lower() for name in _CTE_NAME.findall(sql)}
-    found = []
-    for raw in _RELATION_REFERENCE.findall(sql):
-        name = raw.lower().split(".")[-1]
-        if name not in cte_names:
-            found.append(name)
-    return tuple(dict.fromkeys(found))
+    """Every base table the statement reads, anywhere in the AST (joins, subqueries, CTEs).
+
+    Table functions (`range()`, `pragma_*()`, `read_*()`) are refused outright: the agent
+    only needs the whitelisted table and views.
+    """
+    row = _parser().execute("SELECT json_serialize_sql(?)", [sql]).fetchone()
+    ast = json.loads(row[0] if row else "{}")
+    if ast.get("error"):
+        msg = f"SQL inválido: {ast.get('error_message', 'não foi possível analisar')}"
+        raise SqlRejected(msg)
+    found = _Relations()
+    _walk(ast.get("statements", []), found)
+    if found.functions:
+        msg = f"Funções de tabela não são permitidas: {', '.join(found.functions)}."
+        raise SqlRejected(msg)
+    tables = [name for name in found.tables if name not in found.ctes]
+    return tuple(dict.fromkeys(tables))
 
 
 def guard_sql(sql: str, allowed_relations: tuple[str, ...], row_limit: int) -> GuardedSql:
@@ -94,4 +134,4 @@ def guard_sql(sql: str, allowed_relations: tuple[str, ...], row_limit: int) -> G
         )
         raise SqlRejected(msg)
     executable = f"SELECT * FROM ({statement}) AS guarded LIMIT {int(row_limit)}"
-    return GuardedSql(original=sql, executable=executable, relations=relations, row_limit=row_limit)
+    return GuardedSql(executable=executable, relations=relations)

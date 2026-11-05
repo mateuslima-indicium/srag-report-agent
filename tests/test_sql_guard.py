@@ -1,4 +1,4 @@
-"""Accepted and rejected SQL for the guardrail, plus execution through the tool."""
+"""Accepted and rejected SQL for the guardrail (execution through the tool is in test_tools)."""
 
 from __future__ import annotations
 
@@ -23,6 +23,7 @@ ACCEPTED = [
     "SELECT classi_fin, avg(age_years) FROM cases WHERE classi_fin IN (1, 5) GROUP BY 1",
     "SELECT count(*) FROM main.cases",
     "SELECT * FROM cases /* comments are stripped, so this DROP TABLE is inert */",
+    "SELECT c.uti, d.cases FROM cases c, daily_cases d WHERE c.dt_sin_pri = d.case_date",
 ]
 
 REJECTED = [
@@ -51,7 +52,14 @@ REJECTED = [
     ("SELECT 1", "ao menos uma tabela"),
     ("SELECT count(*) FROM cases WHERE x = (SELECT 1 FROM other)", "Relação não permitida"),
     ("SELEC count(*) FROM cases", "SQL inválido"),
-    ("WITH x AS (DELETE FROM cases) SELECT 1", "Apenas SELECT|bloqueada|inválido"),
+    ("WITH x AS (DELETE FROM cases) SELECT 1", "bloqueada: DELETE"),
+    # relations reachable without FROM/JOIN keywords: comma joins and table functions
+    ("SELECT * FROM cases, patients", "Relação não permitida: patients"),
+    ("SELECT * FROM cases, pragma_version()", "Funções de tabela"),
+    ("SELECT * FROM cases CROSS JOIN range(3)", "Funções de tabela"),
+    ("SELECT * FROM cases WHERE uti IN (SELECT 1 FROM pragma_database_list())", "Funções"),
+    ("SELECT * FROM 'C:/Windows/win.ini'", "Relação não permitida"),
+    ("SELECT * FROM cases, 'C:/Windows/win.ini'", "Relação não permitida"),
 ]
 
 
@@ -73,3 +81,15 @@ def test_rejected_queries(sql: str, reason: str) -> None:
 def test_cte_names_are_not_treated_as_tables() -> None:
     sql = "WITH a AS (SELECT * FROM cases), b AS (SELECT * FROM a) SELECT count(*) FROM b"
     assert guard_sql(sql, QUERYABLE_RELATIONS, 10).relations == ("cases",)
+
+
+def test_relations_are_found_in_every_clause() -> None:
+    sql = (
+        "SELECT * FROM cases c LEFT JOIN LATERAL "
+        "(SELECT 1 FROM daily_cases d WHERE d.cases > c.uti) x ON true, monthly_cases m"
+    )
+    assert guard_sql(sql, QUERYABLE_RELATIONS, 10).relations == (
+        "cases",
+        "daily_cases",
+        "monthly_cases",
+    )
