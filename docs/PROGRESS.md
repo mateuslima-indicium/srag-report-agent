@@ -174,4 +174,27 @@ uv run python scripts/render_architecture.py
 uv run pytest
 ```
 
-## Fase 8: revisão final e publicação — PENDENTE
+## Fase 8: revisão final e publicação — CONCLUÍDA, PUSH PENDENTE DE PERMISSÃO (2026-11-05)
+
+**Checklist do enunciado**
+- 4 métricas (aumento de casos em 7 e 30 dias, mortalidade, UTI, vacinação covid e gripe): `srag-agent metrics` e tabela do relatório. ✔
+- 2 gráficos (diário 30 dias, mensal 12 meses): `report/charts.py`, embutidos no Markdown. ✔
+- Agente consulta banco de dados: tools determinísticas + `run_readonly_sql` sobre DuckDB. ✔
+- Notícias em tempo real: Google News RSS (+ Tavily opcional), com triagem de injeção. ✔
+- Explicações/comentários sobre o cenário: nós `analyze` e `write_report`, com citações `[nN]`. ✔
+- README com toda a documentação; PDF do diagrama em `docs/architecture.pdf`. ✔
+- Critérios: arquitetura (`docs/architecture.md`), governança (`docs/governance.md` + `audit/`), guardrails (`docs/guardrails.md`), dados sensíveis (`docs/data-privacy.md`), clean code (ruff limpo, 129 testes, 97% de cobertura, módulos pequenos). ✔
+
+**Passe de clean code**: removidos campo de estado sem uso, regex morto no sanitizador e rótulos não usados; descrição da tool de SQL passou a ser gerada do contrato de dados (`schema.PROCESSED_COLUMNS` + `CODE_LABELS`); teste do provedor Tavily adicionado.
+
+**Verificações finais**: `git ls-files` não contém `.env`, CSVs nem `.duckdb`; `.coverage` ignorado; branch renomeada para `main`.
+
+**Publicação**
+- `gh repo create srag-report-agent --private --source . --remote origin --description ... --push` criou o repositório `https://github.com/mateuslima-indicium/srag-report-agent` e configurou `origin`.
+- O push foi **recusado pelo GitHub**: o token do `gh` tem escopos `delete_repo, gist, read:org, repo`, mas enviar `.github/workflows/ci.yml` exige o escopo `workflow`. Nada foi enviado ainda.
+- Para concluir (interativo, precisa do navegador): `gh auth refresh -h github.com -s workflow` e depois `git push -u origin main`.
+
+**Lembretes para o autor**
+- Tornar o repositório público antes de 30/11/2026: `gh repo edit mateuslima-indicium/srag-report-agent --visibility public --accept-visibility-change-consequences`.
+- Opcional: adicionar o link do repositório no topo do README.
+
