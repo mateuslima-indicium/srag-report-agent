@@ -11,9 +11,10 @@ from pydantic import BaseModel, Field
 from srag_agent import __version__
 from srag_agent.data.db import file_sha256
 from srag_agent.guardrails.output_validation import ValidationResult
+from srag_agent.metrics.base import scope_label
 from srag_agent.metrics.models import MetricsBundle
 from srag_agent.news.models import NewsBatch
-from srag_agent.report.charts import plot_daily_cases, plot_monthly_cases
+from srag_agent.report.charts import plot_daily_cases, plot_monthly_cases, thousands
 from srag_agent.report.models import ReportContent
 
 if TYPE_CHECKING:
@@ -35,18 +36,15 @@ class Provenance(BaseModel):
     parquet_sha256: str
     parquet_path: str
     latest_case_date: str
+    news_providers: list[str]
     news_queries: list[str]
     llm_calls: int
-    tool_calls: int
+    model_tool_calls: int = Field(description="Tool calls requested by the model")
     input_tokens: int
     output_tokens: int
     guardrails: list[dict[str, object]]
     audit_path: str
     app_version: str = __version__
-
-
-def thousands(value: int) -> str:
-    return f"{value:,}".replace(",", ".")
 
 
 def _metrics_table(bundle: MetricsBundle) -> list[str]:
@@ -115,10 +113,11 @@ def _provenance_section(provenance: Provenance, validation: ValidationResult | N
         f"- **Modelo:** `{provenance.model}`, {provenance.llm_calls} chamada(s), "
         f"{thousands(provenance.input_tokens)} tokens de entrada e "
         f"{thousands(provenance.output_tokens)} de saída.",
-        f"- **Ferramentas:** {provenance.tool_calls} chamada(s) de ferramenta registradas; "
-        "todos os números vêm de SQL determinístico sobre DuckDB, nunca do modelo.",
-        f"- **Notícias:** Google News RSS, consultas: "
-        f"{', '.join(provenance.news_queries) or 'n/a'}.",
+        f"- **Ferramentas:** métricas e séries calculadas por código antes do modelo, mais "
+        f"{provenance.model_tool_calls} chamada(s) de ferramenta pedida(s) pelo modelo; todos "
+        "os números vêm de SQL determinístico sobre DuckDB, nunca do modelo.",
+        f"- **Notícias:** {', '.join(provenance.news_providers) or 'nenhuma fonte respondeu'}; "
+        f"consultas: {', '.join(provenance.news_queries) or 'n/a'}.",
         f"- **Auditoria completa:** `{provenance.audit_path}` "
         "(JSONL com cada chamada, decisão e guardrail).",
         "- **Guardrails executados:**",
@@ -141,10 +140,10 @@ def render_markdown(
     provenance: Provenance,
     chart_files: tuple[str, str],
 ) -> str:
-    scope = f"UF {bundle.uf}" if bundle.uf else "Brasil"
     verified = validation is not None and validation.passed
     lines = [
-        f"# Relatório de SRAG: {scope}, referência {bundle.reference_date:%d/%m/%Y}",
+        f"# Relatório de SRAG: {scope_label(bundle.uf)}, "
+        f"referência {bundle.reference_date:%d/%m/%Y}",
         "",
         "Síndrome Respiratória Aguda Grave (Sivep-Gripe / Open DATASUS). "
         "Métricas calculadas por código; interpretação redigida por um modelo de linguagem "
@@ -197,19 +196,20 @@ def write_report_files(ctx: GraphContext, state: AgentState) -> tuple[Path, list
     monthly = plot_monthly_cases(
         bundle.get_series("monthly_cases_12m"), folder / f"{stem}-casos-mensais.png"
     )
-    llm_events = ctx.audit.of_type("llm_call")
     parquet = ctx.settings.parquet_path
+    input_tokens, output_tokens = ctx.audit.token_usage()
     provenance = Provenance(
         run_id=ctx.audit.run_id,
         model=ctx.model_name,
         parquet_sha256=file_sha256(parquet) if parquet.exists() else "n/a",
         parquet_path=_relative(parquet),
         latest_case_date=bundle.latest_case_date.isoformat(),
+        news_providers=state["news"].providers,
         news_queries=state["news"].queries,
-        llm_calls=len(llm_events),
-        tool_calls=ctx.audit.count("tool_call"),
-        input_tokens=sum(int(e.payload.get("input_tokens") or 0) for e in llm_events),
-        output_tokens=sum(int(e.payload.get("output_tokens") or 0) for e in llm_events),
+        llm_calls=ctx.audit.count("llm_call"),
+        model_tool_calls=state.get("tool_calls_used", 0),
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
         guardrails=[
             {"name": e.name, "passed": e.payload.get("passed")}
             for e in ctx.audit.of_type("guardrail")

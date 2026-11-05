@@ -95,14 +95,15 @@ def run_report(
             )
             raise
     validation = final.get("validation")
+    input_tokens, output_tokens = audit.token_usage()
     audit.log(
         "run_end",
         "srag-report-agent",
         status="ok" if validation is not None and validation.passed else "unverified",
         report=str(final["report_path"]),
-        llm_calls=handler.calls,
-        input_tokens=handler.total_input_tokens,
-        output_tokens=handler.total_output_tokens,
+        llm_calls=audit.count("llm_call"),
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
         tool_calls_used=final.get("tool_calls_used", 0),
         write_attempts=final.get("write_attempts", 0),
     )

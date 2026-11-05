@@ -25,7 +25,8 @@ from srag_agent.audit import AuditLogger
 from srag_agent.config import Settings
 from srag_agent.guardrails.output_validation import ValidationResult, validate_report
 from srag_agent.metrics import collect_metrics
-from srag_agent.news import fetch_news
+from srag_agent.metrics.base import scope_label
+from srag_agent.news import fetch_news, google_news_rss, tavily
 from srag_agent.news.models import NewsBatch
 from srag_agent.report.models import ReportContent
 from srag_agent.report.render import write_report_files
@@ -92,9 +93,12 @@ def _fetch_news(ctx: GraphContext, state: AgentState) -> AgentState:
         ctx.news = fetch_news(ctx.settings)
     else:
         ctx.news = NewsBatch(errors=["desativado por --no-news"])
+    providers = [google_news_rss.PROVIDER]
+    if ctx.settings.has_tavily_key:
+        providers.append(tavily.PROVIDER)
     ctx.audit.log(
         "news_fetch",
-        "google_news_rss" + ("+tavily" if ctx.settings.has_tavily_key else ""),
+        "+".join(providers),
         queries=ctx.news.queries,
         items=[{"id": i.id, "source": i.source, "title": i.title} for i in ctx.news.items],
         discarded=[d.model_dump() for d in ctx.news.discarded],
@@ -122,7 +126,7 @@ def _analyze(ctx: GraphContext, state: AgentState) -> AgentState:
             ),
         ]
     calls_left = ctx.settings.max_tool_calls - state.get("tool_calls_used", 0)
-    tokens_used = _tokens_used(ctx.audit)
+    tokens_used = sum(ctx.audit.token_usage())
     if tokens_used > ctx.settings.max_total_tokens:
         ctx.audit.log(
             "guardrail",
@@ -140,7 +144,7 @@ def _analyze(ctx: GraphContext, state: AgentState) -> AgentState:
     ctx.audit.log(
         "decision",
         "analyze",
-        text=_text(reply)[:4000],
+        text=_text(reply),
         tool_calls=[{"name": c["name"], "args": c["args"]} for c in reply.tool_calls],
     )
     return {"messages": messages, "analysis_notes": _text(reply)}
@@ -156,9 +160,9 @@ def _after_analyze(state: AgentState) -> Literal["run_tools", "write_report"]:
 def _run_tools(ctx: GraphContext, state: AgentState) -> AgentState:
     messages = list(state["messages"])
     last = messages[-1]
-    assert isinstance(last, AIMessage)
+    requested = last.tool_calls if isinstance(last, AIMessage) else []
     used = state.get("tool_calls_used", 0)
-    for call in last.tool_calls:
+    for call in requested:
         if used >= ctx.settings.max_tool_calls:
             content = BUDGET_EXHAUSTED
             ctx.audit.log("guardrail", "tool_budget", passed=False, tool=call["name"])
@@ -192,7 +196,7 @@ def _write_report(ctx: GraphContext, state: AgentState) -> AgentState:
             content=prompts.WRITE_INSTRUCTIONS.format(
                 feedback=prompts.feedback_block(state.get("validation_feedback", "")),
                 reference_date=bundle.reference_date.isoformat(),
-                scope=bundle.uf or "Brasil",
+                scope=scope_label(bundle.uf),
                 latest_case_date=bundle.latest_case_date.isoformat(),
                 metrics_json=prompts.metrics_json(bundle),
                 analysis_notes=state.get("analysis_notes") or "(nenhum)",
@@ -254,13 +258,6 @@ def _after_validate(ctx: GraphContext, state: AgentState) -> Literal["write_repo
 def _render(ctx: GraphContext, state: AgentState) -> AgentState:
     report_path, chart_paths = write_report_files(ctx, state)
     return {"report_path": report_path, "chart_paths": chart_paths}
-
-
-def _tokens_used(audit: AuditLogger) -> int:
-    return sum(
-        int(e.payload.get("input_tokens") or 0) + int(e.payload.get("output_tokens") or 0)
-        for e in audit.of_type("llm_call")
-    )
 
 
 def _text(message: AIMessage) -> str:

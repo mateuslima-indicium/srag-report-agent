@@ -47,7 +47,8 @@ CODE_COLUMNS: Final[tuple[str, ...]] = (
 
 TEXT_COLUMNS: Final[tuple[str, ...]] = ("SG_UF_NOT", "SG_UF", "CS_SEXO")
 
-RAW_AGE_COLUMNS: Final[tuple[str, ...]] = ("NU_IDADE_N", "TP_IDADE")
+RAW_AGE_COLUMN: Final = "NU_IDADE_N"
+"""Raw age value (unit in `TP_IDADE`): read only to derive `age_years` and `age_band`."""
 
 RAW_COLUMNS_TO_READ: Final[tuple[str, ...]] = (
     RAW_IDENTIFIER,
@@ -55,9 +56,9 @@ RAW_COLUMNS_TO_READ: Final[tuple[str, ...]] = (
     *VACCINE_DATE_COLUMNS,
     *CODE_COLUMNS,
     *TEXT_COLUMNS,
-    "NU_IDADE_N",
+    RAW_AGE_COLUMN,
 )
-"""Every raw column the pipeline touches. Everything else is never loaded."""
+"""Every raw column the pipeline touches (27 of 194). Everything else is never loaded."""
 
 DERIVED_COLUMNS: Final[tuple[str, ...]] = ("age_years", "age_band", "notif_hash", "source_file")
 
@@ -82,7 +83,7 @@ PRIVACY_DROPPED_COLUMNS: Final[frozenset[str]] = frozenset(
         "PAC_DSCBO",
         "CS_GESTANT",
         "OBES_IMC",
-        "NU_IDADE_N",
+        RAW_AGE_COLUMN,
         # free text that may carry names
         "MORB_DESC",
         "OUTRO_DES",

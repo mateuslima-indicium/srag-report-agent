@@ -13,9 +13,12 @@ import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 from matplotlib.ticker import FuncFormatter  # noqa: E402
 
+from srag_agent.metrics.base import scope_label  # noqa: E402
 from srag_agent.metrics.models import SeriesResult  # noqa: E402
 
 WIDTH_PX, HEIGHT_PX, DPI = 1600, 900, 150
+MARGINS = {"left": 0.08, "right": 0.97, "top": 0.84, "bottom": 0.14}
+"""Figure margins; the left one leaves room for the y-label next to 5-digit ticks."""
 SOURCE_NOTE = (
     "Fonte: Sivep-Gripe / Open DATASUS (SRAG 2019 a 2026), casos por data de primeiros sintomas."
 )
@@ -42,22 +45,18 @@ def _new_figure(title: str, subtitle: str) -> tuple[Figure, plt.Axes]:
         ax.spines[side].set_color(GRID)
     ax.tick_params(colors=TEXT_SECONDARY, labelsize=9, length=0)
     ax.yaxis.grid(True, color=GRID, linewidth=0.8)
-    ax.yaxis.set_major_formatter(FuncFormatter(lambda value, _: _thousands(int(value))))
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda value, _: thousands(int(value))))
     ax.set_axisbelow(True)
     fig.text(0.06, 0.95, title, fontsize=15, fontweight="bold", color=TEXT_PRIMARY, ha="left")
     fig.text(0.06, 0.905, subtitle, fontsize=10, color=TEXT_SECONDARY, ha="left")
     fig.text(0.06, 0.03, SOURCE_NOTE, fontsize=8, color=TEXT_SECONDARY, ha="left")
-    fig.subplots_adjust(left=0.06, right=0.97, top=0.84, bottom=0.14)
+    fig.subplots_adjust(**MARGINS)
     return fig, ax
 
 
-def _thousands(value: int) -> str:
-    """Brazilian thousands separator: 12.345."""
+def thousands(value: int) -> str:
+    """Brazilian thousands separator: 12.345 (shared with the Markdown renderer)."""
     return f"{value:,}".replace(",", ".")
-
-
-def _scope(series: SeriesResult) -> str:
-    return f"UF {series.uf}" if series.uf else "Brasil"
 
 
 def _annotate_preliminary(ax: plt.Axes, text: str) -> None:
@@ -76,9 +75,8 @@ def _annotate_preliminary(ax: plt.Axes, text: str) -> None:
 def plot_daily_cases(series: SeriesResult, output: Path) -> Path:
     """Line chart of daily cases; the preliminary tail is shaded and drawn in gray."""
     fig, ax = _new_figure(
-        f"Casos diários de SRAG, últimos 30 dias ({_scope(series)})",
-        f"Até {series.reference_date:%d/%m/%Y}. "
-        f"Total no período: {_thousands(series.total)} casos.",
+        f"Casos diários de SRAG, últimos 30 dias ({scope_label(series.uf)})",
+        f"Até {series.reference_date:%d/%m/%Y}. Total no período: {thousands(series.total)} casos.",
     )
     dates = [point.period for point in series.points]
     values = [point.cases for point in series.points]
@@ -104,7 +102,7 @@ def plot_daily_cases(series: SeriesResult, output: Path) -> Path:
         )
     peak = max(series.points, key=lambda point: point.cases)
     ax.annotate(
-        _thousands(peak.cases),
+        thousands(peak.cases),
         (peak.period, peak.cases),
         textcoords="offset points",
         xytext=(0, 8),
@@ -114,6 +112,8 @@ def plot_daily_cases(series: SeriesResult, output: Path) -> Path:
     )
     ax.xaxis.set_major_locator(mdates.DayLocator(interval=3))
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m"))
+    ax.set_xlim(dates[0], dates[-1])
+    ax.margins(x=0.02)
     ax.set_ylim(bottom=0)
     ax.set_ylabel("casos por dia", color=TEXT_SECONDARY, fontsize=9)
     return _save(fig, output)
@@ -122,9 +122,9 @@ def plot_daily_cases(series: SeriesResult, output: Path) -> Path:
 def plot_monthly_cases(series: SeriesResult, output: Path) -> Path:
     """Bar chart of monthly cases; preliminary months are drawn in gray."""
     fig, ax = _new_figure(
-        f"Casos mensais de SRAG, últimos 12 meses ({_scope(series)})",
+        f"Casos mensais de SRAG, últimos 12 meses ({scope_label(series.uf)})",
         f"Meses completos até {series.points[-1].period:%m/%Y}. "
-        f"Total no período: {_thousands(series.total)} casos.",
+        f"Total no período: {thousands(series.total)} casos.",
     )
     labels = [f"{PT_MONTHS[p.period.month - 1]}/{p.period:%y}" for p in series.points]
     colors = [PRELIMINARY_COLOR if p.preliminary else SERIES_COLOR for p in series.points]
@@ -134,7 +134,7 @@ def plot_monthly_cases(series: SeriesResult, output: Path) -> Path:
         ax.text(
             bar.get_x() + bar.get_width() / 2,
             bar.get_height(),
-            _thousands(point.cases),
+            thousands(point.cases),
             ha="center",
             va="bottom",
             fontsize=8.5,

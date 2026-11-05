@@ -33,5 +33,6 @@ class NewsBatch(BaseModel):
     queries: list[str] = Field(default_factory=list)
 
     @property
-    def available(self) -> bool:
-        return bool(self.items)
+    def providers(self) -> list[str]:
+        """Providers that actually delivered items, in first-seen order."""
+        return list(dict.fromkeys(item.provider for item in self.items))

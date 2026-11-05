@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 
 import duckdb
 
@@ -11,6 +11,7 @@ from srag_agent.metrics.base import (
     Window,
     count_cases,
     latest_case_date,
+    preliminary_cutoff,
     previous_window,
     ratio,
     uf_suffix,
@@ -44,10 +45,15 @@ def case_growth(
     numerator, denominator, value = _growth(con, current, uf)
 
     latest = latest_case_date(con)
-    cutoff = latest - timedelta(days=PRELIMINARY_DAYS)
-    consolidated_end = min(reference_date, cutoff)
+    consolidated_end = min(reference_date, preliminary_cutoff(con))
     consolidated = window_ending(consolidated_end, window_days)
     c_numerator, c_denominator, c_value = _growth(con, consolidated, uf)
+    extra: dict[str, float | int] = {
+        "consolidated_numerator": c_numerator,
+        "consolidated_denominator": c_denominator,
+    }
+    if c_value is not None:
+        extra["consolidated_value"] = round(c_value, 4)
 
     return MetricResult(
         name=f"case_growth_{window_days}d",
@@ -77,9 +83,5 @@ def case_growth(
             ),
             "Contagem por data de primeiros sintomas, não por data de notificação.",
         ],
-        extra={
-            "consolidated_numerator": c_numerator,
-            "consolidated_denominator": c_denominator,
-            "consolidated_value": round(c_value, 4) if c_value is not None else -1,
-        },
+        extra=extra,
     )

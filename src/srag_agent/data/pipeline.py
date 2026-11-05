@@ -184,8 +184,9 @@ def render_quality_report(report: DatasetQualityReport) -> str:
         "",
         "## Colunas removidas por privacidade",
         "",
-        "Nenhuma das colunas abaixo existe no Parquet nem é lida pelo pipeline além do "
-        "necessário para derivar o hash de deduplicação:",
+        "Nenhuma das colunas abaixo existe no Parquet. Só duas delas são lidas pelo pipeline, "
+        "e apenas para derivar campos não identificáveis: `NU_NOTIFIC` (hash de "
+        "deduplicação) e `NU_IDADE_N` (idade em anos e faixa etária):",
         "",
         ", ".join(f"`{c}`" for c in sorted(schema.PRIVACY_DROPPED_COLUMNS)),
         "",

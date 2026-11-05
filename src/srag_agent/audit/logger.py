@@ -33,8 +33,18 @@ class AuditLogger:
             handle.write(event.model_dump_json() + "\n")
         return event
 
-    def count(self, type: EventType, name: str | None = None) -> int:
-        return sum(1 for e in self.events if e.type == type and (name is None or e.name == name))
+    def count(self, event_type: EventType, name: str | None = None) -> int:
+        return sum(
+            1 for e in self.events if e.type == event_type and (name is None or e.name == name)
+        )
 
-    def of_type(self, type: EventType) -> list[AuditEvent]:
-        return [e for e in self.events if e.type == type]
+    def of_type(self, event_type: EventType) -> list[AuditEvent]:
+        return [e for e in self.events if e.type == event_type]
+
+    def token_usage(self) -> tuple[int, int]:
+        """(input, output) tokens summed over every `llm_call` recorded so far."""
+        calls = self.of_type("llm_call")
+        return (
+            sum(int(e.payload.get("input_tokens") or 0) for e in calls),
+            sum(int(e.payload.get("output_tokens") or 0) for e in calls),
+        )

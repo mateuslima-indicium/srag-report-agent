@@ -47,10 +47,12 @@ def execute_with_timeout(
 
 
 def _serialise(columns: list[str], rows: list[tuple[Any, ...]]) -> str:
-    payload = {"columns": columns, "rows": [[_json_safe(v) for v in row] for row in rows]}
+    """JSON payload for the model, halving the rows until it fits `MAX_RESULT_CHARS`."""
+    safe_rows = [[_json_safe(v) for v in row] for row in rows]
+    payload: dict[str, Any] = {"columns": columns, "rows": safe_rows}
     text = json.dumps(payload, ensure_ascii=False, default=str)
-    if len(text) > MAX_RESULT_CHARS:
-        payload["rows"] = payload["rows"][: max(1, len(rows) // 4)]
+    while len(text) > MAX_RESULT_CHARS and len(payload["rows"]) > 1:
+        payload["rows"] = payload["rows"][: len(payload["rows"]) // 2]
         payload["truncated"] = True
         text = json.dumps(payload, ensure_ascii=False, default=str)
     return text

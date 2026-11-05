@@ -12,7 +12,7 @@ from srag_agent.config import Settings
 from srag_agent.guardrails.injection import find_injection
 from srag_agent.news import fetch_news, google_news_rss
 from srag_agent.news.fetch import deduplicate, rank, screen
-from srag_agent.news.models import NewsItem
+from srag_agent.news.models import DiscardedItem, NewsBatch, NewsItem
 from srag_agent.news.sanitize import clean_text, strip_source_suffix
 from srag_agent.tools.news_tool import DATA_NOTICE, format_news_for_llm
 from tests.conftest import FIXTURES_DIR
@@ -20,9 +20,17 @@ from tests.conftest import FIXTURES_DIR
 RSS_FIXTURE = (FIXTURES_DIR / "google_news_srag.xml").read_bytes()
 
 
-def _item(title: str, url: str = "https://example.org/a", summary: str = "", **kw) -> NewsItem:
+def _item(
+    title: str, url: str = "https://example.org/a", summary: str = "", **kw: object
+) -> NewsItem:
     return NewsItem(
-        id="", title=title, source="Fonte", url=url, summary=summary, provider="test", **kw
+        id="",
+        title=title,
+        source="Fonte",
+        url=url,  # type: ignore[arg-type]
+        summary=summary,
+        provider="test",
+        **kw,  # type: ignore[arg-type]
     )
 
 
@@ -115,14 +123,15 @@ def test_fetch_news_degrades_gracefully_on_http_errors(settings: Settings) -> No
 
 
 def test_format_news_for_llm_wraps_items_with_delimiters() -> None:
-    batch = fetch_news.__globals__["NewsBatch"](
+    batch = NewsBatch(
         items=rank([_item("Título <b>x</b>", summary="resumo")], 5),
-        discarded=[{"title": "ruim", "reason": "injection:x"}],
+        discarded=[DiscardedItem(title="ruim", reason="injection:x")],
     )
     text = format_news_for_llm(batch)
     assert text.startswith(DATA_NOTICE)
     assert '<noticia id="n1" fonte="Fonte"' in text
     assert "1 item(ns) descartado(s)" in text
+    assert batch.providers == ["test"]
 
 
 @respx.mock

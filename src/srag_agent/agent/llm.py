@@ -8,7 +8,7 @@ from collections.abc import Iterable, Sequence
 from langchain_core.language_models import BaseChatModel
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
 from langchain_core.messages import AIMessage, BaseMessage
-from langchain_core.runnables import Runnable, RunnableConfig
+from langchain_core.runnables import Runnable
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel
 
@@ -61,10 +61,7 @@ def with_tools(model: BaseChatModel, tools: Sequence[BaseTool]) -> Runnable:
 
 
 def invoke_structured[SchemaT: BaseModel](
-    model: BaseChatModel,
-    messages: Sequence[BaseMessage],
-    schema: type[SchemaT],
-    config: RunnableConfig | None = None,
+    model: BaseChatModel, messages: Sequence[BaseMessage], schema: type[SchemaT]
 ) -> SchemaT:
     """Structured output via Claude's native JSON-schema mode; JSON parsing for the fake model.
 
@@ -72,10 +69,10 @@ def invoke_structured[SchemaT: BaseModel](
     forced tool calling, which is what the default `function_calling` method relies on.
     """
     if is_fake(model):
-        reply = model.invoke(list(messages), config=config)
+        reply = model.invoke(list(messages))
         return schema.model_validate_json(str(reply.content))
     structured = model.with_structured_output(schema, method="json_schema")
-    result = structured.invoke(list(messages), config=config)
+    result = structured.invoke(list(messages))
     if isinstance(result, schema):
         return result
     return schema.model_validate(result)

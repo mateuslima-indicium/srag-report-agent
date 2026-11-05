@@ -27,9 +27,6 @@ class AuditCallbackHandler(BaseCallbackHandler):
         self.audit = audit
         self.model_name = model_name
         self._started: dict[UUID, tuple[float, str, int]] = {}
-        self.total_input_tokens = 0
-        self.total_output_tokens = 0
-        self.calls = 0
 
     def on_chat_model_start(
         self,
@@ -50,9 +47,6 @@ class AuditCallbackHandler(BaseCallbackHandler):
         message = getattr(generation, "message", None)
         usage = getattr(message, "usage_metadata", None) or {}
         tool_calls = [call["name"] for call in getattr(message, "tool_calls", []) or []]
-        self.total_input_tokens += int(usage.get("input_tokens", 0))
-        self.total_output_tokens += int(usage.get("output_tokens", 0))
-        self.calls += 1
         self.audit.log(
             "llm_call",
             self.model_name,

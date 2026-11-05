@@ -87,9 +87,25 @@ def hash_identifier(values: pd.Series) -> pd.Series:
     return values.map(digest).astype("string")
 
 
+def _filled(raw: pd.Series) -> pd.Series:
+    """True where the raw text column had a non-blank value."""
+    return raw.astype("string").str.strip().fillna("") != ""
+
+
 def _count_invalid(raw: pd.Series, parsed: pd.Series) -> int:
-    had_value = raw.astype("string").str.strip().fillna("") != ""
-    return int((had_value & parsed.isna()).sum())
+    """Values that were present in the raw file but did not survive parsing/validation."""
+    return int((_filled(raw) & parsed.isna()).sum())
+
+
+def _clean_dates(
+    raw: pd.DataFrame, columns: tuple[str, ...], start: date, end: date, stats: CleaningStats
+) -> dict[str, pd.Series]:
+    cleaned: dict[str, pd.Series] = {}
+    for column in columns:
+        parsed = nullify_outside(parse_mixed_date(raw[column]), start, end)
+        stats.invalid_dates[column.lower()] = _count_invalid(raw[column], parsed)
+        cleaned[column.lower()] = parsed
+    return cleaned
 
 
 def clean_cases(
@@ -102,16 +118,13 @@ def clean_cases(
     out = pd.DataFrame(index=raw.index)
 
     event_start = date.fromisoformat(schema.EPIDEMIOLOGICAL_WINDOW_START)
-    for column in schema.EVENT_DATE_COLUMNS:
-        parsed = nullify_outside(parse_mixed_date(raw[column]), event_start, extraction_date)
-        stats.invalid_dates[column.lower()] = _count_invalid(raw[column], parsed)
-        out[column.lower()] = parsed
-
     vaccine_start = date.fromisoformat(schema.VACCINE_WINDOW_START)
-    for column in schema.VACCINE_DATE_COLUMNS:
-        parsed = nullify_outside(parse_mixed_date(raw[column]), vaccine_start, extraction_date)
-        stats.invalid_dates[column.lower()] = _count_invalid(raw[column], parsed)
-        out[column.lower()] = parsed
+    dates = {
+        **_clean_dates(raw, schema.EVENT_DATE_COLUMNS, event_start, extraction_date, stats),
+        **_clean_dates(raw, schema.VACCINE_DATE_COLUMNS, vaccine_start, extraction_date, stats),
+    }
+    for column, parsed in dates.items():
+        out[column] = parsed
 
     for column in schema.CODE_COLUMNS:
         out[column.lower()] = to_code(raw[column])
@@ -119,11 +132,8 @@ def clean_cases(
     for column in schema.TEXT_COLUMNS:
         out[column.lower()] = raw[column].astype("string").str.strip().str.upper()
 
-    years = age_in_years(raw["NU_IDADE_N"], raw["TP_IDADE"])
-    stats.implausible_ages = int(
-        (raw["NU_IDADE_N"].astype("string").str.strip().fillna("") != "").sum()
-        - years.notna().sum()
-    )
+    years = age_in_years(raw[schema.RAW_AGE_COLUMN], raw["TP_IDADE"])
+    stats.implausible_ages = _count_invalid(raw[schema.RAW_AGE_COLUMN], years)
     out["age_years"] = years.round(2)
     out["age_band"] = age_band(years)
     out["notif_hash"] = hash_identifier(raw[schema.RAW_IDENTIFIER])

@@ -36,10 +36,6 @@ class MetricResult(BaseModel):
     extra: dict[str, float | int] = Field(default_factory=dict)
 
     @property
-    def as_percent(self) -> float | None:
-        return None if self.value is None else self.value * 100
-
-    @property
     def formatted(self) -> str:
         """Value as shown in the report, e.g. `+61,7%` for changes and `11,8%` for shares."""
         return pt_percent(self.value, signed=self.unit == "percent_change")

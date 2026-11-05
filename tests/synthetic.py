@@ -13,6 +13,7 @@ mortality 10/85, ICU 20/90, covid vaccination 30/90, flu vaccination 40/90.
 
 from __future__ import annotations
 
+import hashlib
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -25,11 +26,10 @@ REFERENCE_DATE = date(2026, 10, 31)
 PRELIMINARY_CUTOFF = date(2026, 10, 17)
 
 
-def _attribute(index: int, counts: list[tuple[int, int | None]]) -> int | None:
+def _attribute(index: int, counts: list[tuple[int | None, int]]) -> int | None:
     """Pick the code for row `index` from `[(code, how_many), ...]` blocks."""
     offset = 0
     for code, how_many in counts:
-        assert how_many is not None
         if index < offset + how_many:
             return code
         offset += how_many
@@ -40,7 +40,9 @@ def synthetic_cases() -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     for day_offset in range(30):
         day = date(2026, 9, 2) + timedelta(days=day_offset)
-        rows += [_row(day, "MG", 1, 1, 2, 2, 2) for _ in range(2)]
+        rows += [
+            _row(day, "MG", evolucao=1, uti=1, vacina_cov=2, vacina=2, hospital=2) for _ in range(2)
+        ]
     recent: list[date] = []
     for day_offset in range(23):
         recent += [date(2026, 10, 2) + timedelta(days=day_offset)] * 3
@@ -61,8 +63,13 @@ def synthetic_cases() -> pd.DataFrame:
     for month_offset in range(12):
         year = 2025 + (8 + month_offset) // 12
         month = (8 + month_offset) % 12 + 1
-        rows.append(_row(date(year, month, 15), "RJ", 1, 2, 2, 2, 1))
+        rows.append(
+            _row(date(year, month, 15), "RJ", evolucao=1, uti=2, vacina_cov=2, vacina=2, hospital=1)
+        )
     frame = pd.DataFrame(rows)
+    frame["notif_hash"] = [
+        hashlib.sha256(f"synthetic-{index}".encode()).hexdigest()[:16] for index in frame.index
+    ]
     for column in schema.PROCESSED_COLUMNS:
         if column not in frame.columns:
             frame[column] = None
@@ -93,7 +100,6 @@ def _row(
         "classi_fin": 4,
         "age_years": 60.0,
         "age_band": "60-69",
-        "notif_hash": f"{hash((day, uf, len(uf))) & 0xFFFFFFFF:08x}{id(day) & 0xFFFFFFFF:08x}",
         "source_file": "synthetic",
     }
 

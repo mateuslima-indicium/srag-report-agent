@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from srag_agent.audit import AuditLogger
 from srag_agent.data.db import open_readonly
@@ -56,7 +57,7 @@ def test_metric_tool_reports_invalid_arguments(toolkit) -> None:
         .invoke({"uf": "SP", "reference_date": "2030-01-01"})
         .startswith("ERRO")
     )
-    with pytest.raises(Exception, match="uf"):
+    with pytest.raises(ValidationError, match="uf"):
         tools["get_icu_rate"].invoke({"uf": "XX"})
 
 
@@ -78,6 +79,17 @@ def test_sql_tool_executes_guarded_query_with_limit(toolkit) -> None:
     assert len(big["rows"]) == 5
     assert audit.count("guardrail", "sql_guard") == 2
     assert all(e.payload["passed"] for e in audit.of_type("guardrail"))
+
+
+def test_sql_tool_result_is_bounded_in_size() -> None:
+    from srag_agent.tools.sql_tool import MAX_RESULT_CHARS, _serialise
+
+    rows = [tuple(["x" * 500] * 4) for _ in range(200)]
+    text = _serialise(["a", "b", "c", "d"], rows)
+    payload = json.loads(text)
+    assert len(text) <= MAX_RESULT_CHARS
+    assert payload["truncated"] is True
+    assert 1 <= len(payload["rows"]) < 200
 
 
 def test_sql_tool_rejects_and_audits(toolkit) -> None:

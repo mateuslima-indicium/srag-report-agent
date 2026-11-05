@@ -8,8 +8,7 @@ import duckdb
 
 from srag_agent.data.db import CASES_TABLE, fetch_all
 from srag_agent.metrics.base import (
-    PRELIMINARY_DAYS,
-    latest_case_date,
+    preliminary_cutoff,
     uf_clause,
     uf_suffix,
     window_ending,
@@ -18,11 +17,6 @@ from srag_agent.metrics.models import SeriesPoint, SeriesResult
 
 DAILY_DAYS = 30
 MONTHLY_MONTHS = 12
-
-
-def preliminary_cutoff(con: duckdb.DuckDBPyConnection) -> date:
-    """Dates after the cutoff are still being reported (relative to the data, not the user)."""
-    return latest_case_date(con) - timedelta(days=PRELIMINARY_DAYS)
 
 
 def _month_start(value: date) -> date:

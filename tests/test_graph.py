@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 import httpx
 import pytest
@@ -11,54 +10,15 @@ import respx
 from langchain_core.messages import AIMessage
 
 from srag_agent.agent.llm import build_chat_model
-from srag_agent.agent.runner import run_report
+from srag_agent.agent.runner import RunResult, run_report
 from srag_agent.config import Settings
 from srag_agent.news import google_news_rss
-from srag_agent.report.models import MetricCommentary, NewsReference, ReportContent
+from srag_agent.report.models import NewsReference
 from tests.conftest import FIXTURES_DIR
+from tests.drafts import good_draft
 from tests.synthetic import REFERENCE_DATE, build_synthetic_database
 
 RSS_FIXTURE = (FIXTURES_DIR / "google_news_srag.xml").read_bytes()
-METRIC_NAMES = [
-    "case_growth_7d",
-    "case_growth_30d",
-    "mortality_rate",
-    "icu_rate",
-    "vaccination_covid",
-    "vaccination_flu",
-]
-
-
-def good_draft(news_ids: list[str] | None = None) -> ReportContent:
-    """A draft that respects every rule: numbers below are the synthetic dataset's."""
-    sections = [
-        MetricCommentary(
-            metric_name=name,
-            headline=f"Leitura da métrica {name}",
-            interpretation=(
-                "Os casos recentes de SRAG são preliminares por atraso de notificação; "
-                "a mortalidade considera apenas casos com desfecho conhecido; a taxa de UTI é "
-                "uma proporção de internados, não ocupação de leitos; a vacinação é um proxy "
-                "entre pacientes, não cobertura populacional."
-            ),
-        )
-        for name in METRIC_NAMES
-    ]
-    cited = [
-        NewsReference(news_id=i, relevance="contextualiza a alta de casos") for i in news_ids or []
-    ]
-    context = " ".join(f"[{i}]" for i in news_ids or []) or "Sem notícias nesta execução."
-    return ReportContent(
-        executive_summary=(
-            "Os casos de SRAG cresceram 61,7% nos últimos 30 dias (97 contra 60) com "
-            "mortalidade de 11,8% entre os 85 casos com desfecho conhecido; os dados recentes "
-            "são preliminares."
-        ),
-        metric_sections=sections,
-        news_context=context,
-        cited_news=cited,
-        limitations=["Últimos 14 dias preliminares", "Vacinação é proxy entre pacientes"],
-    )
 
 
 @pytest.fixture
@@ -67,9 +27,13 @@ def synthetic_settings(settings: Settings) -> Settings:
     return settings
 
 
-def _run(settings: Settings, responses: list, **kwargs):
+def _run(settings: Settings, responses: list[AIMessage], **kwargs: object) -> RunResult:
     model = build_chat_model(settings, fake_responses=responses)
-    return run_report(settings, model=model, **kwargs)
+    return run_report(settings, model=model, **kwargs)  # type: ignore[arg-type]
+
+
+def _events(result: RunResult) -> list[dict]:
+    return [json.loads(line) for line in result.audit_path.read_text(encoding="utf-8").splitlines()]
 
 
 @respx.mock
@@ -109,12 +73,12 @@ def test_full_run_with_tool_call_and_news(synthetic_settings: Settings) -> None:
     assert "## Como este relatório foi produzido" in text
     assert "`fake-chat-model`" in text
     assert "⚠️" not in text
+    assert "2 chamada(s) de ferramenta pedida(s) pelo modelo" in text
+    assert "**Notícias:** google_news_rss;" in text
     for chart in result.chart_paths:
         assert chart.exists()
 
-    events = [
-        json.loads(line) for line in result.audit_path.read_text(encoding="utf-8").splitlines()
-    ]
+    events = _events(result)
     types = [e["type"] for e in events]
     assert types[0] == "run_start" and types[-1] == "run_end"
     assert events[-1]["payload"]["status"] == "ok"
@@ -146,9 +110,7 @@ def test_invalid_draft_is_retried_then_marked_unverified(synthetic_settings: Set
     assert "não verificados" in text
     assert "Citações de notícias inexistentes" in text
     assert "desativado por --no-news" in text
-    events = [
-        json.loads(line) for line in result.audit_path.read_text(encoding="utf-8").splitlines()
-    ]
+    events = _events(result)
     assert events[-1]["payload"]["status"] == "unverified"
     assert any(e["name"] == "max_write_attempts" for e in events)
     assert any(e["type"] == "error" and e["name"] == "write_report" for e in events)
@@ -167,10 +129,7 @@ def test_invented_number_triggers_regeneration_then_passes(synthetic_settings: S
 
     assert result.validation is not None and result.validation.passed
     assert result.write_attempts == 2
-    events = [
-        json.loads(line) for line in result.audit_path.read_text(encoding="utf-8").splitlines()
-    ]
-    numeric = [e for e in events if e["name"] == "numeric_consistency"]
+    numeric = [e for e in _events(result) if e["name"] == "numeric_consistency"]
     assert [e["payload"]["passed"] for e in numeric] == [False, True]
     assert numeric[0]["payload"]["unverified"] == ["13,9%", "1234"]
     assert "⚠️" not in result.report_path.read_text(encoding="utf-8")
@@ -203,14 +162,22 @@ def test_tool_budget_is_enforced(synthetic_settings: Settings) -> None:
     ]
     result = _run(tight, responses, include_news=False, output_dir=tight.reports_dir / "x")
     assert result.tool_calls_used == 1
-    events = [
-        json.loads(line) for line in result.audit_path.read_text(encoding="utf-8").splitlines()
-    ]
+    events = _events(result)
     assert any(e["name"] == "tool_budget" and e["payload"]["passed"] is False for e in events)
     assert result.report_path.parent == tight.reports_dir / "x"
 
 
-def test_uf_scoped_run(synthetic_settings: Settings, tmp_path: Path) -> None:
+def test_analysis_decision_is_recorded_in_full(synthetic_settings: Settings) -> None:
+    long_reasoning = "Decidi usar as notícias n1 e n2 porque " + "x" * 6000
+    draft = AIMessage(content=good_draft().model_dump_json())
+    result = _run(
+        synthetic_settings, [AIMessage(content=long_reasoning), draft], include_news=False
+    )
+    decisions = [e for e in _events(result) if e["name"] == "analyze"]
+    assert decisions[0]["payload"]["text"] == long_reasoning
+
+
+def test_uf_scoped_run(synthetic_settings: Settings) -> None:
     responses = [AIMessage(content="ok"), AIMessage(content=good_draft().model_dump_json())]
     result = _run(synthetic_settings, responses, uf="sp", include_news=False)
     assert result.bundle.uf == "SP"
