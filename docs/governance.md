@@ -12,19 +12,23 @@ linha é um `AuditEvent` com `ts`, `run_id`, `seq`, `type`, `name` e `payload`.
 | `type` | Quem emite | O que carrega |
 |---|---|---|
 | `run_start` | `agent/runner.py` | versão, Python, modelo, parâmetros (`reference_date`, `uf`, `include_news`), SHA-256 do Parquet, limites configurados |
-| `tool_call` | tools e nó `collect_metrics` | nome, argumentos (datas em ISO), tamanho/linhas do resultado, duração; para SQL, o texto da consulta e o `purpose` declarado pelo modelo |
+| `tool_call` | tools e nó `collect_metrics` | nome, argumentos (datas em ISO), duração e o **resultado devolvido ao modelo** (JSON agregado; para SQL, até 4.000 caracteres); para SQL, o texto da consulta e o `purpose` declarado pelo modelo; em erro, os argumentos recebidos e a mensagem |
 | `guardrail` | `sql_guard`, `tool_budget`, `token_budget`, validação de saída (um evento por check) e `max_write_attempts` | `passed`, motivo, detalhes (ex.: números sem origem, relações referenciadas) |
 | `llm_call` | `agent/callbacks.py` (callback do LangChain) | modelo, hash SHA-256 do prompt, quantidade de mensagens, tokens de entrada/saída, latência, tool calls pedidas, `stop_reason` |
-| `decision` | nós `analyze` e `write_report` | texto integral em que o modelo explica quais consultas fez e por quê, quais notícias considerou relevantes e quais descartou; notícias citadas e limitações do rascunho |
-| `news_fetch` | nó `fetch_news` | consultas, itens aceitos (id, fonte, título), itens descartados com motivo, erros |
+| `decision` | nós `analyze` e `write_report` | texto integral em que o modelo explica quais consultas fez e por quê (o prompt pede essa justificativa antes de cada rodada de ferramentas), quais notícias considerou relevantes e quais descartou; no `write_report`, o **rascunho completo** de cada tentativa, as notícias citadas com justificativa e as limitações |
+| `news_fetch` | nó `fetch_news` e a tool `get_recent_news` com `query` | consultas, itens aceitos (id, fonte, título), itens descartados com motivo, erros |
 | `error` | qualquer nó | exceções de ferramenta, de parsing da saída estruturada ou da API |
 | `run_end` | `agent/runner.py` | status (`ok` / `unverified` / `error`), caminho do relatório, totais de chamadas e tokens |
 
 Exemplo real versionado: [`../audit/sample-run.jsonl`](../audit/sample-run.jsonl) (32 eventos,
 inclusive uma reprovação do guardrail numérico seguida de regeneração).
 
-Nada sensível entra na trilha: chaves ficam em `SecretStr` e nunca são serializadas; resultados
-de SQL são agregados; o prompt é registrado apenas por hash.
+Com isso cada frase do relatório é rastreável sem rodar nada: o número vem de um `tool_call`
+(resultado gravado), a leitura vem de um `decision` (texto integral e rascunho) e a aprovação
+vem dos `guardrail`. Nada sensível entra na trilha: chaves ficam em `SecretStr` e nunca são
+serializadas; os resultados de ferramenta são agregados por construção (o guardrail de SQL
+recusa consultas linha a linha); o prompt é registrado apenas por hash; os caminhos são
+relativos ao repositório.
 
 ## Registro das decisões do agente
 

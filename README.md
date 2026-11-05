@@ -16,8 +16,9 @@ proveniência que explica como tudo foi produzido.
 ## Como funciona em uma frase
 
 Um grafo LangGraph calcula as métricas por SQL (sem LLM), busca notícias, deixa o Claude
-aprofundar com ferramentas auditadas e redigir o texto em formato estruturado, valida esse texto
-com guardrails (inclusive conferindo cada número contra o que as ferramentas devolveram) e só
+aprofundar com ferramentas auditadas (SQL agregado, métricas por UF ou janela, busca de mais
+notícias sobre um tema) e redigir o texto em formato estruturado, valida esse texto com
+guardrails (inclusive conferindo cada número contra o que as ferramentas devolveram) e só
 então renderiza o Markdown com os gráficos.
 
 ## Arquitetura
@@ -127,7 +128,7 @@ uv run python scripts/build_dataset.py    # limpa, remove PII, grava Parquet + D
 ### 6. Rodar os testes e regenerar o diagrama (opcional)
 
 ```bash
-uv run pytest                                   # 145 testes, sem rede e sem chave
+uv run pytest                                   # 178 testes, sem rede e sem chave
 uv run pytest -m live                           # smoke test real contra a API (pulado sem chave)
 uv run ruff check . && uv run ruff format --check .
 uv run python scripts/render_architecture.py   # regenera docs/architecture.pdf
@@ -184,7 +185,7 @@ janela, definição em português e ressalvas, que o relatório sempre exibe.
 
 | Métrica | Definição | Ressalva obrigatória |
 |---|---|---|
-| Taxa de aumento de casos (7 e 30 dias) | casos nos últimos N dias / casos nos N dias anteriores − 1 | os últimos 14 dias são preliminares; a métrica também informa o valor "consolidado" (janelas terminando 14 dias antes do último caso) |
+| Taxa de aumento de casos (7 e 30 dias) | casos nos últimos N dias / casos nos N dias anteriores − 1 | os últimos 14 dias são preliminares; a tabela mostra ao lado o valor "consolidado" (janelas terminando 14 dias antes do último caso), que é o que deve ser lido como tendência |
 | Taxa de mortalidade | `EVOLUCAO = 2` / `EVOLUCAO ∈ {1, 2, 3}` na janela de 30 dias | exclui casos sem desfecho e informa quantos são; óbitos por outras causas ficam no denominador |
 | Taxa de ocupação de UTI (proxy) | `UTI = 1` / `UTI ∈ {1, 2}` entre `HOSPITAL = 1` | não é ocupação de leitos (o Sivep-Gripe não tem capacidade); é a proporção de internados que foram para UTI |
 | Taxa de vacinação (proxy) | `VACINA_COV = 1` / `VACINA_COV ∈ {1, 2}` e `VACINA = 1` / `VACINA ∈ {1, 2}` | é a proporção de vacinados entre pacientes com SRAG, não cobertura populacional (viés declarado) |
@@ -195,11 +196,13 @@ Os valores na execução de exemplo (Brasil, referência 01/11/2026) estão na t
 
 ## Governança e transparência
 
-Cada execução grava um JSONL em `audit/` com eventos `run_start`, `tool_call`, `llm_call`
-(hash do prompt, tokens, latência, tool calls pedidas), `guardrail` (um por check, com motivo),
-`decision` (o modelo explica quais consultas fez e quais notícias usou ou descartou e por quê),
-`news_fetch`, `error` e `run_end`. O relatório termina com "Como este relatório foi produzido":
-id da execução, hash SHA-256 do Parquet, modelo, tokens, tool calls, guardrails e resultado da
+Cada execução grava um JSONL em `audit/` com eventos `run_start`, `tool_call` (argumentos e o
+resultado agregado devolvido ao modelo), `llm_call` (hash do prompt, tokens, latência, tool
+calls pedidas), `guardrail` (um por check, com motivo), `decision` (o modelo explica quais
+consultas fez e quais notícias usou ou descartou e por quê; cada rascunho fica gravado),
+`news_fetch`, `error` e `run_end`. Dá para rastrear cada número e cada frase do relatório sem
+rodar nada. O relatório termina com "Como este relatório foi produzido": id da execução, hash
+SHA-256 do Parquet, modelo, tokens, tool calls, fontes de notícias, guardrails e resultado da
 validação. Detalhes em [`docs/governance.md`](docs/governance.md).
 
 ## Guardrails
@@ -207,9 +210,9 @@ validação. Detalhes em [`docs/governance.md`](docs/governance.md).
 | Camada | O que impede |
 |---|---|
 | Entrada | UF fora da lista, data malformada ou futura, janelas inválidas (CLI e schemas Pydantic das tools) |
-| SQL (`sql_guard`) | mais de um statement, qualquer coisa que não seja `SELECT`, leitura de arquivos, funções de tabela, relações fora da whitelist (extraídas do AST do DuckDB, o que cobre subconsultas e junções por vírgula), resultados sem `LIMIT`; conexão read-only com acesso a arquivos desligado no motor; timeout |
-| Notícias | HTML, textos longos, injeção de prompt (10 padrões pt/en com normalização unicode); conteúdo entregue ao LLM como dado delimitado |
-| Saída | estrutura, idioma pt-BR conferido campo a campo, ressalva obrigatória por métrica, recomendação clínica individual, PII, **consistência numérica** (todo número do texto precisa existir nas métricas, séries, resultados de tools ou títulos de notícias; tolerância 0,1 p.p. / 1 unidade, sinal ignorado em percentuais) |
+| SQL (`sql_guard`) | mais de um statement, qualquer coisa que não seja `SELECT`, leitura de arquivos, funções de tabela, relações fora da whitelist (extraídas do AST do DuckDB, o que cobre subconsultas e junções por vírgula), **consultas linha a linha sobre `cases`** (só agregados chegam ao modelo), resultados sem `LIMIT`; conexão read-only com acesso a arquivos desligado no motor; timeout |
+| Notícias | HTML, textos longos, injeção de prompt (10 padrões pt/en com normalização unicode, em fonte, título e resumo); conteúdo entregue ao LLM como dado delimitado; títulos escapados no Markdown |
+| Saída | estrutura (uma seção por métrica, sem duplicatas; citações `[nN]` válidas em qualquer campo), idioma pt-BR conferido campo a campo, ressalva obrigatória por métrica, recomendação clínica individual, PII, **consistência numérica** (todo número do texto, inclusive contagens parecidas com anos e decimais, precisa existir nas métricas, séries, resultados de tools ou títulos de notícias; tolerância 0,1 p.p. / 1 unidade, sinal ignorado em percentuais) |
 | Orçamentos | `max_tool_calls`, `max_total_tokens`, `max_write_attempts`, limite de recursão, retries com backoff do SDK |
 
 Saída reprovada volta para o redator com o feedback; esgotadas as tentativas, o relatório sai
@@ -220,15 +223,19 @@ teste de cada guardrail, em [`docs/guardrails.md`](docs/guardrails.md).
 
 O pipeline lê só 27 das 194 colunas, grava 29 e descarta explicitamente quase-identificadores (data
 de nascimento, raça/cor, etnia, ocupação, gestação, IMC), texto livre, localização abaixo de UF,
-lotes de vacina e o número da notificação (substituído por hash truncado). A idade vira faixa
-de 10 anos. Um teste garante que nenhuma coluna da lista de privacidade existe no Parquet. O
-LLM só recebe agregados; o guardrail de PII é a última barreira no texto. Chaves ficam em
-`SecretStr` e nunca aparecem em logs. Detalhes em [`docs/data-privacy.md`](docs/data-privacy.md).
+lotes de vacina e o número da notificação (substituído por hash truncado). A idade fica em anos
+e ganha uma faixa de 10 anos. Um teste garante que nenhuma coluna da lista de privacidade existe
+no Parquet. Datas, UF, sexo e idade permanecem porque as métricas dependem deles, então o dataset
+segue tratado como sensível: **o LLM só recebe agregados por construção**, porque o guardrail de
+SQL recusa qualquer consulta sobre `cases` que não agregue (`GROUP BY`, `DISTINCT` ou `count`/
+`sum`/`avg`), e o guardrail de PII é a última barreira no texto. Chaves ficam em `SecretStr` e
+nunca aparecem em logs; caminhos na auditoria são relativos ao repositório. Detalhes em
+[`docs/data-privacy.md`](docs/data-privacy.md).
 
 ## Testes e qualidade
 
 ```bash
-uv run pytest                 # 145 testes, sem rede e sem chave (modelo fake, HTTP mockado)
+uv run pytest                 # 178 testes, sem rede e sem chave (modelo fake, HTTP mockado)
 uv run pytest -m live         # smoke test real contra a API (pulado sem chave)
 uv run ruff check . && uv run ruff format --check .
 ```
@@ -236,8 +243,8 @@ uv run ruff check . && uv run ruff format --check .
 Cobertura de 97% (`uv run pytest --cov=srag_agent`). O smoke test `live` fica fora da seleção
 padrão, então `uv run pytest` nunca chama a API mesmo com a chave configurada. Os testes cobrem:
 limpeza e build do dataset num CSV sintético (dois formatos de data, anos absurdos, duplicatas,
-remoção de PII), métricas num dataset sintético com valores calculados à mão, gráficos, 47
-casos de SQL aceito/rejeitado (inclusive junções por vírgula e funções de tabela), fixture real
+remoção de PII), métricas num dataset sintético com valores calculados à mão, gráficos, 69
+casos de SQL aceito/rejeitado (inclusive junções por vírgula, funções de tabela e consultas linha a linha), fixture real
 do RSS do Google News com mocks `respx`, casos de injeção (inclusive evasão por unicode), cada
 guardrail de saída, entradas inválidas na CLI, e o grafo de ponta a ponta com um modelo fake
 roteirizado (tool calls, número inventado → regeneração, falha persistente → "não verificado",

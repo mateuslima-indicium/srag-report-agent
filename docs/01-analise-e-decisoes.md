@@ -121,19 +121,19 @@ de consistência numérica confira o texto do LLM contra os valores das tools.
 ## 5. Guardrails planejados
 
 1. **Entrada**: validação de argumentos da CLI (datas, UF, janelas); escopo restrito a SRAG.
-2. **SQL**: parser que aceita apenas um `SELECT`; bloqueia `ATTACH`, `COPY`, `PRAGMA`, `INSTALL`, `LOAD`, DDL/DML, subconsultas para tabelas fora da whitelist; força `LIMIT <= 200`; timeout; conexão `read_only=True`.
+2. **SQL**: parser que aceita apenas um `SELECT`; bloqueia `ATTACH`, `COPY`, `PRAGMA`, `INSTALL`, `LOAD`, DDL/DML, subconsultas para tabelas fora da whitelist; só consultas agregadas sobre a tabela de casos; força `LIMIT <= 200`; timeout; conexão `read_only=True`.
 3. **Notícias (prompt injection)**: strip de HTML, limite de tamanho, lista de padrões de injeção (ex.: "ignore as instruções", "system prompt") que descarta o item e registra no audit; conteúdo entregue ao LLM entre delimitadores com instrução explícita de tratar como dado.
-4. **Saída**: saída estruturada (Pydantic) com campos fixos; verificação de que todo número/percentual citado no texto bate com os valores retornados pelas tools (tolerância de arredondamento), senão o nó pede regeneração (máx. 2 tentativas) e, falhando, marca o trecho como "não verificado"; bloqueio de PII (regex CPF, e-mail, telefone); bloqueio de recomendação médica individual; idioma pt-BR.
+4. **Saída**: saída estruturada (Pydantic) com campos fixos; verificação de que todo número/percentual citado no texto bate com os valores retornados pelas tools (tolerância de arredondamento), senão o nó pede regeneração (até 3 tentativas no total) e, falhando, marca o relatório como "não verificado"; bloqueio de PII (regex CPF, e-mail, telefone); bloqueio de recomendação médica individual; idioma pt-BR.
 5. **Orçamento**: limite de iterações do agente, de chamadas de tool e de tokens por execução; retries com backoff na API.
 
 ## 6. Transparência e auditoria
 
-- `audit/run-<timestamp>-<id>.jsonl`: eventos `run_start` (parâmetros, versões, hash do Parquet), `llm_call` (modelo, hash do prompt, tokens, latência), `tool_call` (nome, argumentos, resumo do resultado, duração), `guardrail` (nome, resultado, detalhes), `decision` (justificativa do agente: quais notícias usou e por quê, quais descartou), `run_end` (status, custo estimado).
-- O relatório termina com a seção "Como este relatório foi produzido": data de referência, fontes de dados com hash, notícias citadas com URL e data, id da execução.
+- `audit/run-<timestamp>-<id>.jsonl`: eventos `run_start` (parâmetros, versões, hash do Parquet), `llm_call` (modelo, hash do prompt, tokens, latência), `tool_call` (nome, argumentos, resultado, duração), `guardrail` (nome, resultado, detalhes), `decision` (justificativa do agente: quais notícias usou e por quê, quais descartou; rascunhos), `run_end` (status, tokens, chamadas).
+- O relatório termina com a seção "Como este relatório foi produzido": id da execução, hash do Parquet, modelo e tokens, ferramentas, notícias e guardrails; a tabela de notícias traz URL, data e quais foram citadas.
 - `docs/data-quality.md` gerado pelo build do dataset: linhas lidas, descartadas, nulos por coluna, datas inválidas.
 
 ## 7. Riscos conhecidos
 
-- API da Anthropic muda rápido: o workflow faz um smoke test na fase 0 e não passa `temperature`/`top_p`.
+- API da Anthropic muda rápido: há um smoke test real (`uv run pytest -m live`) e o cliente não passa `temperature`/`top_p`.
 - Google News RSS pode mudar formato ou bloquear: o parser tem fixture de teste e o agente degrada para "sem notícias disponíveis" sem quebrar o relatório.
 - DuckDB pode não ler latin-1 diretamente dependendo da versão: fallback em pandas com `encoding="latin-1"` em chunks.

@@ -27,22 +27,32 @@ Transformações nas colunas mantidas:
 - Localização fica apenas na UF (`sg_uf_not`, `sg_uf`).
 - Datas implausíveis (ano 8202, datas futuras) viram nulo; vacinação só aceita datas a partir de 2020-12.
 
-Resultado: 577.038 linhas e 29 colunas, sem nenhum campo que identifique uma pessoa.
-O Parquet versionado (`data/processed/srag.parquet`, 12 MB) é esse dataset; os CSVs brutos
+Resultado: 577.038 linhas e 29 colunas, sem identificadores diretos (nome, CPF, CNS, número
+de notificação, endereço, telefone) nem os quase-identificadores finos listados acima. O
+Parquet versionado (`data/processed/srag.parquet`, 12 MB) é esse dataset; os CSVs brutos
 ficam fora do repositório (`.gitignore`).
+
+O que **permanece** no Parquet, e por quê: as datas exatas do episódio e das doses, a UF, o
+sexo e a idade em anos (duas casas, porque a conversão de dias/meses gera frações para
+bebês). As métricas e séries dependem dessas colunas. Elas são as mesmas já publicadas pelo
+Open DATASUS e, isoladas, não identificam ninguém, mas a combinação de datas, UF, sexo e
+idade torna a maioria das linhas única. Por isso o dataset continua sendo tratado como
+sensível: ele é lido por código determinístico e só chega ao modelo de linguagem em forma
+agregada (seção 2). Uma redução adicional (idade inteira, datas truncadas à semana) é
+trabalho futuro e custaria precisão nas métricas.
 
 ## 2. O LLM só vê agregados
 
-O modelo nunca recebe linhas individuais:
+O modelo nunca recebe uma linha de um caso. Isso é imposto por código, não só pelo prompt:
 
 - As métricas e séries chegam como `MetricResult`/`SeriesResult` (contagens, razões, janelas).
-- `run_readonly_sql` devolve no máximo `sql_row_limit` (200) linhas, e o prompt e a descrição da tool orientam consultas agregadas. Mesmo que o modelo peça `SELECT * FROM cases`, as colunas disponíveis já são as de-identificadas acima.
+- `run_readonly_sql` é protegida pelo guardrail `sql_guard`, que analisa o AST da consulta e **recusa qualquer SELECT sobre `cases` que não seja agregado**: é preciso `GROUP BY`, `DISTINCT` ou funções como `count`/`sum`/`avg` no resultado final (subconsultas e CTEs são analisadas recursivamente). `SELECT * FROM cases`, `SELECT dt_sin_pri, age_years FROM cases WHERE age_years < 1` ou uma função de janela são rejeitados antes de executar. As views `daily_cases`, `monthly_cases` e `cases_by_uf` já são agregadas e podem ser lidas livremente. O resultado ainda é limitado a `sql_row_limit` (200) linhas.
 - O guardrail `pii` bloqueia CPF, e-mail, telefone, CNS e números de notificação no texto final, como última barreira.
 
 ## 3. Segredos e configuração
 
 - `ANTHROPIC_API_KEY` e `TAVILY_API_KEY` vivem em `.env` (ignorado pelo Git) e são lidas em `SecretStr`; nunca aparecem em `repr`, logs, auditoria ou relatório. `.env.example` mostra o formato.
-- A trilha de auditoria registra o prompt apenas por hash; resultados de SQL registrados são os agregados devolvidos ao modelo.
+- A trilha de auditoria registra o prompt apenas por hash (SHA-256 completo); os resultados de ferramenta registrados são os agregados devolvidos ao modelo, nunca linhas de casos. Caminhos de arquivo na trilha e no relatório são relativos ao repositório, sem nome de usuário ou pasta local.
 - O cliente da Anthropic recebe só o conteúdo das mensagens; nenhum dado bruto é enviado.
 
 ## 4. Notícias
