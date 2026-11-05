@@ -174,7 +174,10 @@ uv run python scripts/render_architecture.py
 uv run pytest
 ```
 
-## Fase 8: revisão final e publicação — CONCLUÍDA, PUSH PENDENTE DE PERMISSÃO (2026-11-05)
+## Fase 8: revisão final e publicação — CONCLUÍDA (2026-11-05)
+
+**Publicado**: após `gh auth refresh -s workflow`, `git push -u origin main` enviou os 10 commits; o repositório foi tornado **público** a pedido do autor e a CI (`.github/workflows/ci.yml`) passou no primeiro run (lint, formatação, 129 testes).
+
 
 **Checklist do enunciado**
 - 4 métricas (aumento de casos em 7 e 30 dias, mortalidade, UTI, vacinação covid e gripe): `srag-agent metrics` e tabela do relatório. ✔
