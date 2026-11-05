@@ -43,7 +43,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = ["live: tests that call the real Anthropic API (skipped without a key)"]
-addopts = "-q"
+addopts = "-q -m 'not live'"
 
 [dependency-groups]
 dev = [
