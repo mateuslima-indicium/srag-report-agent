@@ -18,12 +18,13 @@ def build_tools(
     con: duckdb.DuckDBPyConnection,
     audit: AuditLogger,
     news_provider: Callable[[], NewsBatch],
+    news_sink: Callable[[NewsBatch], None],
     row_limit: int,
 ) -> list[StructuredTool]:
     return [
         *build_metric_tools(con, audit),
         build_sql_tool(con, audit, row_limit),
-        build_news_tool(news_provider, audit),
+        build_news_tool(news_provider, news_sink, audit),
     ]
 
 

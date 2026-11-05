@@ -27,8 +27,11 @@ tendências populacionais para gestores e comunicadores.
 ANALYSIS_INSTRUCTIONS = """Abaixo estão as métricas já calculadas (JSON) e as notícias recentes \
 coletadas. Antes de redigir o relatório, decida se vale aprofundar com ferramentas adicionais \
 (por exemplo, recorte por UF, faixa etária, sexo ou classificação final via run_readonly_sql, \
-ou janelas diferentes nas métricas). Você tem um orçamento de no máximo {max_tool_calls} \
-chamadas de ferramenta nesta etapa; use-as só quando agregarem contexto ao leitor.
+janelas diferentes nas métricas, ou get_recent_news com uma consulta específica quando uma \
+notícia citar uma UF ou tema que mereça mais contexto). Você tem um orçamento de no máximo \
+{max_tool_calls} chamadas de ferramenta nesta etapa; use-as só quando agregarem contexto ao \
+leitor. Sempre que chamar ferramentas, escreva antes uma ou duas frases dizendo o que vai \
+consultar e por quê: esse texto fica registrado na trilha de auditoria.
 
 Quando terminar, responda em texto corrido (sem JSON) com: (a) as decisões que tomou e por quê \
 (quais consultas extras fez, quais notícias considera relevantes e quais descartou e por quê); \

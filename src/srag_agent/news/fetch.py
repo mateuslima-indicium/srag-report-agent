@@ -15,7 +15,7 @@ def screen(items: list[NewsItem]) -> tuple[list[NewsItem], list[DiscardedItem]]:
     kept: list[NewsItem] = []
     discarded: list[DiscardedItem] = []
     for item in items:
-        labels = find_injection(f"{item.title}\n{item.summary}")
+        labels = find_injection(f"{item.source}\n{item.title}\n{item.summary}")
         if labels:
             discarded.append(
                 DiscardedItem(title=item.title[:120], reason=f"injection:{','.join(labels)}")
@@ -37,11 +37,13 @@ def deduplicate(items: list[NewsItem]) -> list[NewsItem]:
     return unique
 
 
-def rank(items: list[NewsItem], limit: int) -> list[NewsItem]:
-    """Newest first (undated items last), then assign citation ids `n1..nN`."""
+def rank(items: list[NewsItem], limit: int, first_id: int = 1) -> list[NewsItem]:
+    """Newest first (undated items last), then assign citation ids `n<first_id>..`."""
     oldest = datetime.min.replace(tzinfo=UTC)
     ordered = sorted(items, key=lambda item: item.published_at or oldest, reverse=True)[:limit]
-    return [item.model_copy(update={"id": f"n{index}"}) for index, item in enumerate(ordered, 1)]
+    return [
+        item.model_copy(update={"id": f"n{index}"}) for index, item in enumerate(ordered, first_id)
+    ]
 
 
 def fetch_news(settings: Settings, queries: tuple[str, ...] | None = None) -> NewsBatch:
@@ -61,4 +63,18 @@ def fetch_news(settings: Settings, queries: tuple[str, ...] | None = None) -> Ne
         discarded=discarded,
         errors=errors,
         queries=list(chosen),
+    )
+
+
+def search_more(batch: NewsBatch, query: str, limit: int) -> NewsBatch:
+    """Agent-driven follow-up search: screen, drop what the batch already has, append with
+    the next citation ids. Returns a new batch (the original is not mutated)."""
+    items, errors = google_news_rss.search((query,))
+    kept, discarded = screen(deduplicate([*batch.items, *items])[len(batch.items) :])
+    new_items = rank(kept, limit, first_id=len(batch.items) + 1)
+    return NewsBatch(
+        items=[*batch.items, *new_items],
+        discarded=[*batch.discarded, *discarded],
+        errors=[*batch.errors, *errors],
+        queries=[*batch.queries, query],
     )

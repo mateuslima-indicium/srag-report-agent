@@ -75,6 +75,7 @@ def test_full_run_with_tool_call_and_news(synthetic_settings: Settings) -> None:
     assert "⚠️" not in text
     assert "2 chamada(s) de ferramenta pedida(s) pelo modelo" in text
     assert "**Notícias:** google_news_rss;" in text
+    assert "consolidado:" in text
     for chart in result.chart_paths:
         assert chart.exists()
 
@@ -90,6 +91,31 @@ def test_full_run_with_tool_call_and_news(synthetic_settings: Settings) -> None:
     assert ("decision", "write_report") in names
     assert ("news_fetch", "google_news_rss") in names
     assert sum(1 for t in types if t == "llm_call") == 3
+    written = [e for e in events if e["name"] == "write_report"][0]
+    assert written["payload"]["draft"]["metric_sections"][0]["metric_name"] == "case_growth_7d"
+    sql = [e for e in events if e["name"] == "run_readonly_sql"][0]
+    assert json.loads(sql["payload"]["result"])["columns"] == ["sg_uf_not", "n"]
+    assert events[-1]["payload"]["report"].startswith("relatorio-srag-")
+
+
+@respx.mock
+def test_agent_can_search_more_news_mid_run(synthetic_settings: Settings) -> None:
+    respx.get(url__startswith=google_news_rss.BASE_URL).mock(
+        return_value=httpx.Response(200, content=RSS_FIXTURE)
+    )
+    responses = [
+        AIMessage(
+            content="Vou buscar notícias sobre Sergipe.",
+            tool_calls=[{"name": "get_recent_news", "args": {"query": "SRAG Sergipe"}, "id": "n"}],
+        ),
+        AIMessage(content="fim"),
+        AIMessage(content=good_draft(["n9"]).model_dump_json()),
+    ]
+    result = _run(synthetic_settings, responses)
+    assert result.validation is not None and result.validation.passed
+    text = result.report_path.read_text(encoding="utf-8")
+    assert "| n9 |" in text and "[n9]" in text
+    assert "SRAG Sergipe" in text
 
 
 def test_invalid_draft_is_retried_then_marked_unverified(synthetic_settings: Settings) -> None:
@@ -110,6 +136,7 @@ def test_invalid_draft_is_retried_then_marked_unverified(synthetic_settings: Set
     assert "não verificados" in text
     assert "Citações de notícias inexistentes" in text
     assert "desativado por --no-news" in text
+    assert "**Notícias:** nenhuma notícia (desativado por --no-news)" in text
     events = _events(result)
     assert events[-1]["payload"]["status"] == "unverified"
     assert any(e["name"] == "max_write_attempts" for e in events)

@@ -53,11 +53,19 @@ def model_label(settings: Settings, model: BaseChatModel) -> str:
     return FAKE_MODEL_NAME if is_fake(model) else settings.anthropic_model
 
 
-def with_tools(model: BaseChatModel, tools: Sequence[BaseTool]) -> Runnable:
-    """Bind tools when the model supports it; the fake model replays scripted tool calls."""
+def with_tools(
+    model: BaseChatModel, tools: Sequence[BaseTool], allow_calls: bool = True
+) -> Runnable:
+    """Bind tools when the model supports it; the fake model replays scripted tool calls.
+
+    When the budget is exhausted the tools stay bound but `tool_choice` is `none`: the API
+    requires the tool definitions whenever the history already contains tool calls.
+    """
     if is_fake(model) or not tools:
         return model
-    return model.bind_tools(list(tools))
+    if allow_calls:
+        return model.bind_tools(list(tools))
+    return model.bind_tools(list(tools), tool_choice={"type": "none"})
 
 
 def invoke_structured[SchemaT: BaseModel](

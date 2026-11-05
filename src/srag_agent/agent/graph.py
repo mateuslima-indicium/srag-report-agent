@@ -51,6 +51,10 @@ class GraphContext:
     def tool_map(self) -> dict[str, BaseTool]:
         return {tool.name: tool for tool in self.tools}
 
+    def replace_news(self, batch: NewsBatch) -> None:
+        """The news tool extends the batch mid-run; the graph state picks it up in run_tools."""
+        self.news = batch
+
 
 def build_graph(ctx: GraphContext) -> CompiledStateGraph:
     graph = StateGraph(AgentState)
@@ -136,7 +140,7 @@ def _analyze(ctx: GraphContext, state: AgentState) -> AgentState:
             limit=ctx.settings.max_total_tokens,
         )
         calls_left = 0
-    model = with_tools(ctx.model, ctx.tools if calls_left > 0 else [])
+    model = with_tools(ctx.model, ctx.tools, allow_calls=calls_left > 0)
     reply = model.invoke(messages)
     if not isinstance(reply, AIMessage):
         reply = AIMessage(content=str(reply))
@@ -170,7 +174,7 @@ def _run_tools(ctx: GraphContext, state: AgentState) -> AgentState:
             content = _invoke_tool(ctx, call["name"], call["args"])
             used += 1
         messages.append(ToolMessage(content=content, tool_call_id=call["id"] or call["name"]))
-    return {"messages": messages, "tool_calls_used": used}
+    return {"messages": messages, "tool_calls_used": used, "news": ctx.news}
 
 
 def _invoke_tool(ctx: GraphContext, name: str, args: dict[str, Any]) -> str:
@@ -220,6 +224,7 @@ def _write_report(ctx: GraphContext, state: AgentState) -> AgentState:
         attempt=attempts,
         cited_news=[r.model_dump() for r in draft.cited_news],
         limitations=draft.limitations,
+        draft=draft.model_dump(),
     )
     return {"draft": draft, "write_attempts": attempts}
 

@@ -16,7 +16,7 @@ from srag_agent.audit import AuditLogger
 
 def _prompt_hash(messages: list[list[BaseMessage]]) -> str:
     text = "\n".join(str(m.content) for batch in messages for m in batch)
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 class AuditCallbackHandler(BaseCallbackHandler):

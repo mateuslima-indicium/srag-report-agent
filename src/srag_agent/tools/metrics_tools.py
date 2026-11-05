@@ -60,12 +60,13 @@ def build_metric_tools(con: duckdb.DuckDBPyConnection, audit: AuditLogger) -> li
     ) -> StructuredTool:
         def run(**kwargs: object) -> str:
             started = time.perf_counter()
+            requested = _json_ready(kwargs)
             try:
                 reference = resolve_reference_date(con, kwargs.pop("reference_date", None))
                 uf = validate_uf(kwargs.pop("uf", None))
                 result = compute(con, reference, uf=uf, **kwargs)
             except ValueError as error:
-                audit.log("tool_call", name, args=_json_ready(kwargs), error=str(error))
+                audit.log("tool_call", name, args=requested, error=str(error))
                 return f"ERRO: {error}"
             payload = (
                 "[" + ",".join(r.model_dump_json() for r in result) + "]"
@@ -75,9 +76,9 @@ def build_metric_tools(con: duckdb.DuckDBPyConnection, audit: AuditLogger) -> li
             audit.log(
                 "tool_call",
                 name,
-                args={"reference_date": reference.isoformat(), "uf": uf, **_json_ready(kwargs)},
-                result_chars=len(payload),
+                args={**requested, "reference_date": reference.isoformat(), "uf": uf},
                 duration_ms=round((time.perf_counter() - started) * 1000),
+                result=payload,
             )
             return payload
 
