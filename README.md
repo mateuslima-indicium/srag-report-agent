@@ -128,7 +128,7 @@ uv run python scripts/build_dataset.py    # limpa, remove PII, grava Parquet + D
 ### 6. Rodar os testes e regenerar o diagrama (opcional)
 
 ```bash
-uv run pytest                                   # 178 testes, sem rede e sem chave
+uv run pytest                                   # 179 testes, sem rede e sem chave
 uv run pytest -m live                           # smoke test real contra a API (pulado sem chave)
 uv run ruff check . && uv run ruff format --check .
 uv run python scripts/render_architecture.py   # regenera docs/architecture.pdf
@@ -156,7 +156,7 @@ Todas opcionais exceto a chave; definidas no `.env` ou no ambiente.
 ### Problemas comuns
 
 - **`uv: command not found`**: feche e reabra o terminal depois de instalar o `uv`, ou siga o guia de instalação acima.
-- **`AuthenticationError` / 401**: a chave no `.env` está vazia ou inválida. Confira se o arquivo se chama exatamente `.env` na raiz do projeto.
+- **"Falha na API da Anthropic: a ANTHROPIC_API_KEY está inválida"**: a chave no `.env` está errada ou foi revogada. Confira se o arquivo se chama exatamente `.env` na raiz do projeto. A CLI sai com código 1 e a trilha de auditoria registra o erro (`error` e `run_end` com `status: error`).
 - **`RateLimitError` / 429**: a conta está sem créditos ou no limite; o cliente já tenta 3 vezes com espera exponencial.
 - **Sem notícias no relatório**: o Google News pode estar indisponível; o agente segue e registra o motivo em "Contexto das notícias" e na auditoria. Rode de novo ou use `--no-news`.
 - **Rodar fora da raiz do projeto**: os caminhos (`data/`, `reports/`, `audit/`, `.env`) são resolvidos a partir da pasta do pacote, então `uv run srag-agent` funciona de qualquer diretório desde que o `.env` esteja na raiz do repositório.
@@ -235,7 +235,7 @@ nunca aparecem em logs; caminhos na auditoria são relativos ao repositório. De
 ## Testes e qualidade
 
 ```bash
-uv run pytest                 # 178 testes, sem rede e sem chave (modelo fake, HTTP mockado)
+uv run pytest                 # 179 testes, sem rede e sem chave (modelo fake, HTTP mockado)
 uv run pytest -m live         # smoke test real contra a API (pulado sem chave)
 uv run ruff check . && uv run ruff format --check .
 ```

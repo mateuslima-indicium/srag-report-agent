@@ -68,3 +68,23 @@ def test_report_command_without_key_uses_fake_model(cli_settings: Settings, tmp_
     assert "modelo fake" in result.output
     assert "fake-chat-model" in result.stdout
     assert list((tmp_path / "r").glob("relatorio-srag-*.md"))
+
+
+def test_api_authentication_error_is_a_clear_message(
+    cli_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import anthropic
+    import httpx
+
+    from srag_agent.agent import runner as agent_runner
+
+    def failing_run(*args: object, **kwargs: object) -> None:
+        request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+        response = httpx.Response(401, request=request)
+        raise anthropic.AuthenticationError("Invalid bearer token", response=response, body=None)
+
+    monkeypatch.setattr(agent_runner, "run_report", failing_run)
+    result = runner.invoke(cli.app, ["report", "--no-news"])
+    assert result.exit_code == 1
+    assert "ANTHROPIC_API_KEY está inválida" in result.output
+    assert "Traceback" not in result.output

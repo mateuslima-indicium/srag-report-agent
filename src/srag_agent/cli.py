@@ -6,6 +6,7 @@ from datetime import date
 from pathlib import Path
 from typing import Annotated
 
+import anthropic
 import typer
 
 from srag_agent import __version__
@@ -100,6 +101,8 @@ def report(
         )
     except (FileNotFoundError, ValueError) as error:
         _fail(str(error))
+    except anthropic.AnthropicError as error:
+        _fail(_api_error_message(error))
     status = "aprovado" if result.validation and result.validation.passed else "NÃO VERIFICADO"
     typer.echo(f"relatório: {result.report_path}")
     for chart in result.chart_paths:
@@ -130,6 +133,23 @@ def _collect(settings: Settings, reference_date: date | None, uf: str | None) ->
             return collect_metrics(con, reference_date, uf)
     except (FileNotFoundError, ValueError) as error:
         _fail(str(error))
+
+
+def _api_error_message(error: anthropic.AnthropicError) -> str:
+    """One actionable line per failure family; the full error is already in the audit trail."""
+    if isinstance(error, anthropic.AuthenticationError):
+        hint = "a ANTHROPIC_API_KEY está inválida ou foi revogada. Confira o .env."
+    elif isinstance(error, anthropic.PermissionDeniedError):
+        hint = "a chave não tem acesso ao modelo configurado em ANTHROPIC_MODEL."
+    elif isinstance(error, anthropic.NotFoundError):
+        hint = "o modelo configurado em ANTHROPIC_MODEL não existe para esta conta."
+    elif isinstance(error, anthropic.RateLimitError):
+        hint = "limite de uso ou créditos esgotados; tente de novo mais tarde."
+    elif isinstance(error, anthropic.APIConnectionError):
+        hint = "sem conexão com a API (rede, proxy ou firewall)."
+    else:
+        hint = f"{type(error).__name__}."
+    return f"Falha na API da Anthropic: {hint} Detalhes na trilha de auditoria em audit/."
 
 
 def _fail(message: str) -> typer.Exit:
