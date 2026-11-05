@@ -77,7 +77,30 @@ uv run srag-agent metrics
 uv run srag-agent charts
 ```
 
-## Fase 3: tools, notícias e guardrail de SQL — PENDENTE
+## Fase 3: tools, notícias e guardrail de SQL — CONCLUÍDA (2026-11-05)
+
+**Feito**
+- `audit/events.py` (`AuditEvent`: ts, run_id, seq, type, name, payload) e `audit/logger.py` (`AuditLogger` JSONL append-only em `audit/run-<ts>-<id>.jsonl`, com `count`/`of_type` para os guardrails e o relatório). Antecipado da fase 4 porque as tools já registram eventos.
+- `guardrails/sql_guard.py`: `guard_sql` em 5 camadas: parser do DuckDB (`extract_statements`, exatamente 1 statement do tipo SELECT), blocklist regex (DDL/DML, ATTACH/COPY/PRAGMA/INSTALL/LOAD/SET/CALL, `read_csv*`, `read_parquet`, `glob`, `duckdb_*`, `information_schema`, `current_setting`...), whitelist de relações (`cases`, `daily_cases`, `monthly_cases`, `cases_by_uf`, ignorando nomes de CTE), wrapper `SELECT * FROM (...) LIMIT n`. Comentários são removidos antes da análise.
+- `data/db.open_readonly` agora abre com `enable_external_access=false` (DuckDB bloqueia qualquer acesso a arquivo no nível do motor; verificado com `read_csv` em `win.ini`).
+- `tools/sql_tool.py`: `run_readonly_sql(sql, purpose)` com timeout por `con.interrupt()` (15 s), serialização JSON limitada a 6 kB, rejeições e execuções viram eventos `guardrail`/`tool_call`.
+- `guardrails/injection.py`: 10 padrões pt/en (ignorar instruções, system prompt, troca de papel, executar comando, revelar segredos, marcadores `<system>`, dev mode, escape do delimitador `<noticia>`), com normalização NFKC e remoção de zero-width para evitar evasão.
+- `news/`: `models.py` (`NewsItem`, `DiscardedItem`, `NewsBatch`), `sanitize.py` (strip HTML, 600 chars, remove sufixo " - Fonte"), `google_news_rss.py` (3 queries, httpx + feedparser, user-agent próprio), `tavily.py` (só com chave), `fetch.py` (dedup por URL/título, screening de injeção com motivo registrado, ordenação por data, ids `n1..nN`).
+- `tools/metrics_tools.py` (6 tools: crescimento, mortalidade, UTI, vacinação, série diária, série mensal; argumentos validados por Pydantic com `Literal` de UFs e janelas), `tools/news_tool.py` (`get_recent_news` + `format_news_for_llm` com delimitadores `<noticia id=...>` e aviso de "dados não confiáveis"), `tools/__init__.build_tools`.
+- Testes: `test_sql_guard.py` (14 aceitas + 26 rejeitadas + CTE), `test_news.py` (fixture real `tests/fixtures/google_news_srag.xml` com 50 itens, respx para 200 e 503, 8 casos de injeção incl. full-width e zero-width, 3 manchetes legítimas), `test_tools.py` (6). Total: 98 testes.
+
+**Smoke test real**: Google News RSS devolveu 8 itens (G1, CNN Brasil, UOL...) sem descartes nem erros.
+
+**Decisões**
+- O resumo do Google News é só o título com link; `summary` fica vazio nesse caso (sem texto inventado).
+- Comentário SQL contendo palavras bloqueadas é aceito porque o comentário é removido antes (inerte).
+- A tool de notícias não busca por conta própria: o grafo busca uma vez por execução e a tool só reexpõe o lote (evita múltiplas chamadas de rede e garante o mesmo conjunto auditado).
+
+**Validar**
+```
+uv run pytest tests/test_sql_guard.py tests/test_news.py tests/test_tools.py
+```
+
 ## Fase 4: agente LangGraph — PENDENTE
 ## Fase 5: guardrails de saída — PENDENTE
 ## Fase 6: relatório final — PENDENTE

@@ -87,8 +87,10 @@ def ensure_database(parquet_path: Path, db_path: Path) -> Path:
 
 
 def open_readonly(db_path: Path) -> duckdb.DuckDBPyConnection:
-    """Open the database for reading only; the agent never gets a writable handle."""
-    return duckdb.connect(str(db_path), read_only=True)
+    """Open the database for reading only, with file-system access disabled at the engine
+    level, so that the agent never gets a writable handle nor a way to read local files.
+    """
+    return duckdb.connect(str(db_path), read_only=True, config={"enable_external_access": "false"})
 
 
 def fetch_all(
