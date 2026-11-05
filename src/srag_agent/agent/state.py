@@ -41,4 +41,3 @@ class AgentState(TypedDict, total=False):
     # outputs
     report_path: Path | None
     chart_paths: list[Path]
-    errors: list[str]

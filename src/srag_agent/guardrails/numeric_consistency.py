@@ -37,8 +37,6 @@ class NumericCheck:
     passed: bool
     checked: int
     unverified: list[str] = field(default_factory=list)
-    allowed_integers: set[int] = field(default_factory=set)
-    allowed_percents: set[float] = field(default_factory=set)
 
     @property
     def issue(self) -> str:
@@ -170,6 +168,4 @@ def check_numbers(
         passed=not unique,
         checked=len(found_percents) + len(found_integers),
         unverified=unique,
-        allowed_integers=integers,
-        allowed_percents=percents,
     )

@@ -84,7 +84,7 @@ def _collect_metrics(ctx: GraphContext, state: AgentState) -> AgentState:
         uf=bundle.uf,
         metrics={m.name: m.value for m in bundle.metrics},
     )
-    return {"bundle": bundle, "tool_calls_used": 0, "write_attempts": 0, "errors": []}
+    return {"bundle": bundle, "tool_calls_used": 0, "write_attempts": 0}
 
 
 def _fetch_news(ctx: GraphContext, state: AgentState) -> AgentState:

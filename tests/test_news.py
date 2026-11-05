@@ -123,3 +123,37 @@ def test_format_news_for_llm_wraps_items_with_delimiters() -> None:
     assert text.startswith(DATA_NOTICE)
     assert '<noticia id="n1" fonte="Fonte"' in text
     assert "1 item(ns) descartado(s)" in text
+
+
+@respx.mock
+def test_tavily_is_used_only_with_key_and_parses_results(settings: Settings) -> None:
+    from pydantic import SecretStr
+
+    from srag_agent.news import tavily
+
+    respx.get(url__startswith=google_news_rss.BASE_URL).mock(return_value=httpx.Response(503))
+    respx.post(tavily.ENDPOINT).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "results": [
+                    {
+                        "title": "Alta de SRAG em <b>SP</b>",
+                        "url": "https://example.org/srag",
+                        "content": "Resumo da matéria",
+                        "published_date": "2026-11-01T10:00:00Z",
+                    },
+                    {"title": "", "url": "https://example.org/empty"},
+                ]
+            },
+        )
+    )
+    without_key = fetch_news(settings)
+    assert without_key.items == []
+
+    keyed = settings.model_copy(update={"tavily_api_key": SecretStr("tvly-test")})
+    batch = fetch_news(keyed)
+    assert [item.title for item in batch.items] == ["Alta de SRAG em SP"]
+    assert batch.items[0].provider == "tavily"
+    assert batch.items[0].published_at == datetime(2026, 11, 1, 10, 0, tzinfo=UTC)
+    assert len(batch.errors) == len(google_news_rss.DEFAULT_QUERIES)

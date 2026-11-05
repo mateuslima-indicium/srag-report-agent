@@ -145,10 +145,8 @@ CODE_LABELS: Final[dict[str, dict[int, str]]] = {
         5: "SRAG por covid-19",
     },
     "tp_idade": {1: "Dias", 2: "Meses", 3: "Anos"},
-    "cs_sexo": {},
 }
-
-SEX_LABELS: Final[dict[str, str]] = {"M": "Masculino", "F": "Feminino", "I": "Ignorado"}
+"""Portuguese labels for each code column, used to describe the SQL tool to the LLM."""
 
 AGE_BAND_EDGES: Final[tuple[int, ...]] = (0, 10, 20, 30, 40, 50, 60, 70, 80)
 AGE_BAND_LABELS: Final[tuple[str, ...]] = (

@@ -12,6 +12,7 @@ from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
 from srag_agent.audit import AuditLogger
+from srag_agent.data import schema
 from srag_agent.data.db import QUERYABLE_RELATIONS
 from srag_agent.guardrails.sql_guard import SqlRejected, guard_sql
 
@@ -89,15 +90,22 @@ def build_sql_tool(
     return StructuredTool.from_function(
         func=run_readonly_sql,
         name="run_readonly_sql",
-        description=(
-            "Executa um SELECT somente leitura no banco de casos de SRAG para aprofundar a "
-            "análise (ex.: por UF, faixa etária, sexo, classificação final). Tabela `cases` "
-            "(colunas: dt_sin_pri, dt_notific, dt_interna, dt_evoluca, sg_uf_not, cs_sexo, "
-            "age_years, age_band, hospital, uti, suport_ven, evolucao, classi_fin, vacina, "
-            "vacina_cov, fator_risc) e views `daily_cases`, `monthly_cases`, `cases_by_uf`. "
-            "Códigos: evolucao 1=cura 2=óbito 3=óbito outras causas 9=ignorado; uti/hospital/"
-            "vacina/vacina_cov 1=sim 2=não 9=ignorado; classi_fin 1=influenza 2=outro vírus "
-            "3=outro agente 4=não especificado 5=covid-19. Resultado limitado a poucas linhas."
-        ),
+        description=tool_description(),
         args_schema=SqlInput,
+    )
+
+
+def tool_description() -> str:
+    """Schema summary for the LLM, derived from the data contract (never hand-maintained)."""
+    columns = ", ".join(schema.PROCESSED_COLUMNS)
+    codes = "; ".join(
+        f"{column} " + " ".join(f"{code}={label}" for code, label in labels.items())
+        for column, labels in schema.CODE_LABELS.items()
+    )
+    return (
+        "Executa um SELECT somente leitura no banco de casos de SRAG para aprofundar a "
+        "análise (ex.: por UF, faixa etária, sexo, classificação final). Tabela `cases` "
+        f"(colunas: {columns}) e views {', '.join(f'`{r}`' for r in QUERYABLE_RELATIONS[1:])}. "
+        f"Códigos: {codes}. Datas em DATE; age_band em faixas de 10 anos; sg_uf_not é a UF. "
+        "Prefira consultas agregadas; o resultado é limitado a poucas linhas."
     )

@@ -8,7 +8,6 @@ import re
 MAX_CHARS = 600
 _TAG = re.compile(r"<[^>]+>")
 _WHITESPACE = re.compile(r"\s+")
-_SOURCE_SUFFIX = re.compile(r"\s+-\s+[^-]{2,60}$")
 
 
 def strip_html(text: str) -> str:
@@ -29,6 +28,7 @@ def clean_text(text: str, limit: int = MAX_CHARS) -> str:
 
 def strip_source_suffix(title: str, source: str) -> str:
     """Google News appends ` - Source` to titles; drop it when it matches the source."""
-    if source and title.endswith(f" - {source}"):
-        return title[: -len(source) - 3].rstrip()
-    return _SOURCE_SUFFIX.sub("", title) if source == "" else title
+    suffix = f" - {source}"
+    if source and title.endswith(suffix):
+        return title[: -len(suffix)].rstrip()
+    return title

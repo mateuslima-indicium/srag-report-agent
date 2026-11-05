@@ -158,12 +158,12 @@ LLM só recebe agregados; o guardrail de PII é a última barreira no texto. Cha
 ## Testes e qualidade
 
 ```bash
-uv run pytest                 # 128 testes, sem rede e sem chave (modelo fake, HTTP mockado)
+uv run pytest                 # 129 testes, sem rede e sem chave (modelo fake, HTTP mockado)
 uv run pytest -m live         # smoke test real contra a API (pulado sem chave)
 uv run ruff check . && uv run ruff format --check .
 ```
 
-Cobertura de 92% (`uv run pytest --cov=srag_agent`). Os testes cobrem: limpeza e build do
+Cobertura de 97% (`uv run pytest --cov=srag_agent`). Os testes cobrem: limpeza e build do
 dataset num CSV sintético (dois formatos de data, anos absurdos, duplicatas, remoção de PII),
 métricas num dataset sintético com valores calculados à mão, gráficos, 40 casos de SQL
 aceito/rejeitado, fixture real do RSS do Google News com mocks `respx`, casos de injeção
