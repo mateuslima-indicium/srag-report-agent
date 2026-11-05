@@ -53,42 +53,108 @@ httpx + feedparser, pydantic, typer, pytest + ruff.
 
 ## Como rodar
 
-Pré-requisitos: Python 3.13, `uv` e uma chave da API da Anthropic.
+### 1. Pré-requisitos
+
+| O que | Como obter |
+|---|---|
+| `uv` (gerenciador de ambiente Python) | Linux/macOS: `curl -LsSf https://astral.sh/uv/install.sh \| sh`. Windows (PowerShell): `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 \| iex"`. Guia: https://docs.astral.sh/uv/getting-started/installation/ |
+| Python 3.13 | Não precisa instalar à parte: `uv sync` baixa a versão indicada em `.python-version` se ela não existir na máquina. |
+| Chave da API da Anthropic | Crie em https://console.anthropic.com/settings/keys (conta com créditos). Uma execução completa custa poucos centavos de dólar no Sonnet 5.5 (cerca de 30 a 45 mil tokens de entrada e 10 mil de saída). |
+| Git | Para clonar o repositório. |
+
+Não é preciso baixar dados: o dataset tratado e de-identificado (`data/processed/srag.parquet`,
+12 MB, 577 mil casos) já está versionado, e o banco DuckDB é reconstruído a partir dele na
+primeira execução. Também não é preciso nenhuma outra chave: as notícias vêm do RSS do Google
+News, sem autenticação.
+
+### 2. Instalar e configurar
 
 ```bash
-uv sync                                   # 1. ambiente e dependências (uv.lock)
-cp .env.example .env                      # 2. preencha ANTHROPIC_API_KEY no .env
-uv run srag-agent report                  # 3. gera o relatório em reports/
+git clone https://github.com/mateuslima-indicium/srag-report-agent.git
+cd srag-report-agent
+uv sync                      # cria .venv com as versões travadas em uv.lock
+cp .env.example .env         # Windows: copy .env.example .env
 ```
 
-Isso basta: o dataset tratado (`data/processed/srag.parquet`, 12 MB, 577 mil casos) está
-versionado e o banco DuckDB é reconstruído a partir dele na primeira execução.
+Abra o `.env` e preencha `ANTHROPIC_API_KEY=` com a sua chave. As demais variáveis já têm
+valores padrão (ver tabela abaixo).
 
-Para reproduzir o dataset a partir do Open DATASUS (650 MB de CSV):
+### 3. Gerar o relatório
 
 ```bash
-uv run python scripts/download_data.py    # 4. baixa os CSVs de 2025 e 2026 para data/raw/
-uv run python scripts/build_dataset.py    # 5. limpa, remove PII, grava Parquet + DuckDB + docs/data-quality.md
+uv run srag-agent report
 ```
 
-Outros comandos:
+O comando imprime os caminhos gerados. Para a data de referência padrão (último caso do banco,
+01/11/2026) a saída é:
+
+| Arquivo | Conteúdo |
+|---|---|
+| `reports/relatorio-srag-2026-11-01.md` | o relatório (Markdown, abre em qualquer visualizador; no GitHub ou VS Code os gráficos aparecem embutidos) |
+| `reports/relatorio-srag-2026-11-01-casos-diarios.png` | gráfico de casos diários dos últimos 30 dias |
+| `reports/relatorio-srag-2026-11-01-casos-mensais.png` | gráfico de casos mensais dos últimos 12 meses |
+| `audit/run-<timestamp>-<id>.jsonl` | trilha de auditoria da execução (uma linha JSON por evento) |
+
+A execução leva cerca de 1 a 2 minutos (3 a 4 chamadas ao modelo mais a busca de notícias). A
+última linha da saída informa se a validação pelos guardrails foi **aprovada** ou se o relatório
+saiu marcado como **não verificado** (ver [Guardrails](#guardrails)).
+
+Sem `ANTHROPIC_API_KEY`, o comando ainda roda, mas com um modelo fake (o mesmo dos testes): os
+números, gráficos e auditoria são reais, o texto não. A CLI avisa isso em amarelo.
+
+### 4. Variações úteis
 
 ```bash
 uv run srag-agent report --reference-date 2026-09-30 --uf SP   # recorte retroativo e por UF
 uv run srag-agent report --no-news                             # sem consultar notícias
+uv run srag-agent report --output /tmp/saida                   # outra pasta de saída
 uv run srag-agent metrics                                      # só as métricas, sem LLM
-uv run srag-agent charts                                       # só os gráficos
-uv run srag-agent version
+uv run srag-agent charts                                       # só os gráficos, sem LLM
+uv run srag-agent version                                      # versão e configuração não sensível
+uv run srag-agent --help
 ```
 
-Saída de `report`: `reports/relatorio-srag-<data>[-UF].md`, dois PNG ao lado e
-`audit/run-<timestamp>-<id>.jsonl`. Sem `ANTHROPIC_API_KEY`, o comando roda com um modelo fake
-(usado nos testes e na CI) e avisa que o texto não é real.
+### 5. Reproduzir o dataset do zero (opcional)
 
-Variáveis de ambiente (`.env.example`): `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL`
-(`claude-sonnet-5-5`; alternativas `claude-opus-5-5`, `claude-haiku-5-5`), `TAVILY_API_KEY`
-(opcional, segunda fonte de notícias). Limites ajustáveis por variável: `MAX_TOOL_CALLS` (8),
-`MAX_NEWS_ITEMS` (8), `SQL_ROW_LIMIT` (200), `MAX_WRITE_ATTEMPTS` (3), `MAX_TOTAL_TOKENS` (200000).
+Só é necessário para auditar o pipeline de dados ou atualizar a extração. Baixa cerca de 650 MB
+do Open DATASUS e leva alguns minutos:
+
+```bash
+uv run python scripts/download_data.py    # CSVs de 2025 e 2026 para data/raw/ (pula se já existem)
+uv run python scripts/build_dataset.py    # limpa, remove PII, grava Parquet + DuckDB + docs/data-quality.md
+```
+
+### 6. Rodar os testes e regenerar o diagrama (opcional)
+
+```bash
+uv run pytest                                   # 129 testes, sem rede e sem chave
+uv run pytest -m live                           # smoke test real contra a API (pulado sem chave)
+uv run ruff check . && uv run ruff format --check .
+uv run python scripts/render_architecture.py   # regenera docs/architecture.pdf
+```
+
+### Variáveis de ambiente
+
+Todas opcionais exceto a chave; definidas no `.env` ou no ambiente.
+
+| Variável | Padrão | Para que serve |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | (obrigatória) | chave da API da Anthropic |
+| `ANTHROPIC_MODEL` | `claude-sonnet-5-5` | modelo do orquestrador; alternativas `claude-opus-5-5` (mais caro) e `claude-haiku-5-5` (mais barato) |
+| `TAVILY_API_KEY` | vazio | segunda fonte de notícias (Tavily); sem ela só o Google News RSS é usado |
+| `MAX_TOOL_CALLS` | 8 | chamadas de ferramenta que o modelo pode fazer na etapa de análise |
+| `MAX_NEWS_ITEMS` | 8 | notícias entregues ao modelo |
+| `SQL_ROW_LIMIT` | 200 | linhas máximas devolvidas por `run_readonly_sql` |
+| `MAX_WRITE_ATTEMPTS` | 3 | tentativas de redação antes de marcar o relatório como não verificado |
+| `MAX_TOTAL_TOKENS` | 200000 | orçamento de tokens por execução; acima dele as ferramentas são desligadas |
+
+### Problemas comuns
+
+- **`uv: command not found`**: feche e reabra o terminal depois de instalar o `uv`, ou siga o guia de instalação acima.
+- **`AuthenticationError` / 401**: a chave no `.env` está vazia ou inválida. Confira se o arquivo se chama exatamente `.env` na raiz do projeto.
+- **`RateLimitError` / 429**: a conta está sem créditos ou no limite; o cliente já tenta 3 vezes com espera exponencial.
+- **Sem notícias no relatório**: o Google News pode estar indisponível; o agente segue e registra o motivo em "Contexto das notícias" e na auditoria. Rode de novo ou use `--no-news`.
+- **Rodar fora da raiz do projeto**: os caminhos (`data/`, `reports/`, `audit/`, `.env`) são resolvidos a partir da pasta do pacote, então `uv run srag-agent` funciona de qualquer diretório desde que o `.env` esteja na raiz do repositório.
 
 ## Dados
 
