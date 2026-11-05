@@ -158,5 +158,20 @@ uv run pytest tests/test_output_guardrails.py tests/test_graph.py
 uv run srag-agent report
 ```
 
-## Fase 7: documentação, diagrama e CI — PENDENTE
+## Fase 7: documentação, diagrama e CI — CONCLUÍDA (2026-11-05)
+
+**Feito**
+- `docs/architecture.md`: diagrama Mermaid (CLI → orquestrador com os 7 nós → LLM, tools, fontes de dados, guardrails, saída) + tabela de componentes + fluxo passo a passo + justificativas.
+- `scripts/render_architecture.py`: extrai o bloco Mermaid e gera `docs/architecture.pdf` via `mermaid.ink/pdf` (funcionou, 371 kB), com fallback para PNG→PDF (Pillow) e para um diagrama de caixas em matplotlib offline.
+- `docs/governance.md` (tabela de eventos da auditoria, decisões, proveniência, reprodutibilidade), `docs/guardrails.md` (tabela guardrail × risco × local × mecanismo × teste, comportamento em falha, exemplo real), `docs/data-privacy.md` (quatro camadas: colunas descartadas, LLM só vê agregados, segredos, notícias; nota sobre LGPD).
+- `README.md` completo em português: o que é, arquitetura (Mermaid resumido + link para o PDF), como rodar em 3 + 2 comandos, dados e fatos medidos, métricas com definições e ressalvas, governança, guardrails, dados sensíveis, testes (128, cobertura 92%), limitações e trabalho futuro, estrutura do repo, licença.
+- `.github/workflows/ci.yml`: `uv sync --frozen`, `ruff check`, `ruff format --check`, `pytest --cov`.
+- `tests/test_live.py` (marcado `live`, `skipif` sem chave) e `tests/test_cli.py` (5 testes via `CliRunner`, incluindo `report` com modelo fake). O fake padrão agora cicla "ok" para nunca esgotar.
+
+**Validar**
+```
+uv run python scripts/render_architecture.py
+uv run pytest
+```
+
 ## Fase 8: revisão final e publicação — PENDENTE

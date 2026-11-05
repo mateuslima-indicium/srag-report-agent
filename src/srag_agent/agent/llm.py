@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 from collections.abc import Iterable, Sequence
 
 from langchain_core.language_models import BaseChatModel
@@ -38,7 +39,9 @@ def build_chat_model(
             timeout=settings.llm_timeout_seconds,
             max_retries=3,
         )
-    return GenericFakeChatModel(messages=iter(list(fake_responses or ["ok"])))
+    if fake_responses is None:
+        return GenericFakeChatModel(messages=itertools.cycle(["ok"]))
+    return GenericFakeChatModel(messages=iter(list(fake_responses)))
 
 
 def is_fake(model: BaseChatModel) -> bool:

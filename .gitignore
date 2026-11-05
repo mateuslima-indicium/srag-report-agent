@@ -37,3 +37,8 @@ data/processed/*.tmp
 # Relatorios gerados localmente (so o exemplo e versionado)
 reports/*
 !reports/exemplo-*
+
+# Cobertura
+.coverage
+coverage.xml
+htmlcov/
