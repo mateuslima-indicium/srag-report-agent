@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel
 
@@ -39,10 +41,11 @@ class NoInput(BaseModel):
     """This tool takes no arguments."""
 
 
-def build_news_tool(batch: NewsBatch, audit: AuditLogger) -> StructuredTool:
+def build_news_tool(batch_provider: Callable[[], NewsBatch], audit: AuditLogger) -> StructuredTool:
     """The batch is fetched once per run by the graph; the tool only re-exposes it."""
 
     def get_recent_news() -> str:
+        batch = batch_provider()
         audit.log("tool_call", "get_recent_news", items=len(batch.items))
         return format_news_for_llm(batch)
 

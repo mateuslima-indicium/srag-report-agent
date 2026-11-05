@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import duckdb
 from langchain_core.tools import StructuredTool
 
@@ -13,12 +15,15 @@ from srag_agent.tools.sql_tool import build_sql_tool
 
 
 def build_tools(
-    con: duckdb.DuckDBPyConnection, audit: AuditLogger, news: NewsBatch, row_limit: int
+    con: duckdb.DuckDBPyConnection,
+    audit: AuditLogger,
+    news_provider: Callable[[], NewsBatch],
+    row_limit: int,
 ) -> list[StructuredTool]:
     return [
         *build_metric_tools(con, audit),
         build_sql_tool(con, audit, row_limit),
-        build_news_tool(news, audit),
+        build_news_tool(news_provider, audit),
     ]
 
 

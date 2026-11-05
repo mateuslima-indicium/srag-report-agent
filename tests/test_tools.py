@@ -19,7 +19,7 @@ def toolkit(tmp_path: Path):
     database = build_synthetic_database(tmp_path)
     audit = AuditLogger(tmp_path / "audit", run_id="test")
     with open_readonly(database) as con:
-        tools = {tool.name: tool for tool in build_tools(con, audit, NewsBatch(), row_limit=5)}
+        tools = {t.name: t for t in build_tools(con, audit, NewsBatch, row_limit=5)}
         yield tools, audit
 
 

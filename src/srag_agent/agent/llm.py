@@ -1,12 +1,15 @@
-"""Chat model factory: real Anthropic model when a key exists, fake model otherwise."""
+"""Chat model factory and the two ways the graph talks to it (tools, structured output)."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.runnables import Runnable, RunnableConfig
+from langchain_core.tools import BaseTool
+from pydantic import BaseModel
 
 from srag_agent.config import Settings
 
@@ -38,8 +41,38 @@ def build_chat_model(
     return GenericFakeChatModel(messages=iter(list(fake_responses or ["ok"])))
 
 
+def is_fake(model: BaseChatModel) -> bool:
+    return isinstance(model, GenericFakeChatModel)
+
+
 def model_label(settings: Settings, model: BaseChatModel) -> str:
     """Human-readable model name for audit logs and the report provenance section."""
-    if isinstance(model, GenericFakeChatModel):
-        return FAKE_MODEL_NAME
-    return settings.anthropic_model
+    return FAKE_MODEL_NAME if is_fake(model) else settings.anthropic_model
+
+
+def with_tools(model: BaseChatModel, tools: Sequence[BaseTool]) -> Runnable:
+    """Bind tools when the model supports it; the fake model replays scripted tool calls."""
+    if is_fake(model) or not tools:
+        return model
+    return model.bind_tools(list(tools))
+
+
+def invoke_structured[SchemaT: BaseModel](
+    model: BaseChatModel,
+    messages: Sequence[BaseMessage],
+    schema: type[SchemaT],
+    config: RunnableConfig | None = None,
+) -> SchemaT:
+    """Structured output via Claude's native JSON-schema mode; JSON parsing for the fake model.
+
+    `method="json_schema"` is required: Sonnet 5.5 / Opus 5.5 / Fable 5.1 no longer support
+    forced tool calling, which is what the default `function_calling` method relies on.
+    """
+    if is_fake(model):
+        reply = model.invoke(list(messages), config=config)
+        return schema.model_validate_json(str(reply.content))
+    structured = model.with_structured_output(schema, method="json_schema")
+    result = structured.invoke(list(messages), config=config)
+    if isinstance(result, schema):
+        return result
+    return schema.model_validate(result)

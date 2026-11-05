@@ -16,7 +16,7 @@ from srag_agent.metrics.base import (
     uf_suffix,
     window_ending,
 )
-from srag_agent.metrics.models import MetricResult
+from srag_agent.metrics.models import MetricResult, pt_percent
 
 
 def _growth(
@@ -73,7 +73,7 @@ def case_growth(
                 f"Sobre dados consolidados (janela de {window_days} dias terminando em "
                 f"{consolidated.end:%d/%m/%Y}: {c_numerator} casos contra {c_denominator} na "
                 f"janela anterior) a variação é "
-                + ("indefinida." if c_value is None else f"{c_value * 100:+.1f}%.")
+                + ("indefinida." if c_value is None else f"{pt_percent(c_value, signed=True)}.")
             ),
             "Contagem por data de primeiros sintomas, não por data de notificação.",
         ],

@@ -48,11 +48,9 @@ def metrics(reference_date: ReferenceDateOption = None, uf: UfOption = None) -> 
     typer.echo(f"Data de referência: {bundle.reference_date}  |  escopo: {bundle.uf or 'Brasil'}")
     typer.echo(f"{'métrica':<58} {'valor':>9} {'num':>8} {'den':>8}  janela")
     for metric in bundle.metrics:
-        value = "n/d" if metric.as_percent is None else f"{metric.as_percent:+.1f}%"
-        if metric.unit == "share" and metric.as_percent is not None:
-            value = f"{metric.as_percent:.1f}%"
         typer.echo(
-            f"{metric.label[:58]:<58} {value:>9} {metric.numerator:>8} {metric.denominator:>8}"
+            f"{metric.label[:58]:<58} {metric.formatted:>9} "
+            f"{metric.numerator:>8} {metric.denominator:>8}"
             f"  {metric.window_start} a {metric.window_end}"
         )
     for series in bundle.series:
@@ -85,3 +83,38 @@ def _collect(settings: Settings, reference_date: str | None, uf: str | None) -> 
     except (FileNotFoundError, ValueError) as error:
         typer.secho(str(error), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from error
+
+
+@app.command()
+def report(
+    reference_date: ReferenceDateOption = None,
+    uf: UfOption = None,
+    no_news: Annotated[bool, typer.Option("--no-news", help="Não consultar notícias.")] = False,
+    output: Annotated[Path | None, typer.Option("--output", help="Pasta de saída.")] = None,
+) -> None:
+    """Executa o agente e gera o relatório (Markdown + 2 PNG + auditoria JSONL)."""
+    from srag_agent.agent.runner import run_report
+
+    settings = get_settings()
+    parsed = date.fromisoformat(reference_date) if reference_date else settings.reference_date
+    if not settings.has_anthropic_key:
+        typer.secho(
+            "ANTHROPIC_API_KEY ausente: o relatório será gerado com o modelo fake "
+            "(sem texto real).",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+    try:
+        result = run_report(settings, parsed, uf, include_news=not no_news, output_dir=output)
+    except (FileNotFoundError, ValueError) as error:
+        typer.secho(str(error), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from error
+    status = "aprovado" if result.validation and result.validation.passed else "NÃO VERIFICADO"
+    typer.echo(f"relatório: {result.report_path}")
+    for chart in result.chart_paths:
+        typer.echo(f"gráfico:   {chart}")
+    typer.echo(f"auditoria: {result.audit_path}")
+    typer.echo(
+        f"execução {result.run_id}: modelo {result.model}, {result.tool_calls_used} tool call(s), "
+        f"{result.write_attempts} tentativa(s) de redação, validação {status}"
+    )

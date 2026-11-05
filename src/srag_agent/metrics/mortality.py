@@ -13,7 +13,7 @@ from srag_agent.metrics.base import (
     uf_suffix,
     window_ending,
 )
-from srag_agent.metrics.models import MetricResult
+from srag_agent.metrics.models import MetricResult, pt_percent
 
 DEATH = "evolucao = 2"
 KNOWN_OUTCOME = "evolucao IN (1, 2, 3)"
@@ -49,7 +49,7 @@ def mortality_rate(
             f"{window.start:%d/%m/%Y} e {window.end:%d/%m/%Y}{uf_suffix(uf)}."
         ),
         caveats=[
-            f"{open_cases} de {total} casos da janela ({(open_share or 0) * 100:.1f}%) ainda "
+            f"{open_cases} de {total} casos da janela ({pt_percent(open_share or 0.0)}) ainda "
             "não têm desfecho registrado e ficaram fora do denominador; a mortalidade recente "
             "tende a ser revisada.",
             "Óbitos por outras causas (EVOLUCAO=3) contam no denominador, não no numerador.",

@@ -101,7 +101,30 @@ uv run srag-agent charts
 uv run pytest tests/test_sql_guard.py tests/test_news.py tests/test_tools.py
 ```
 
-## Fase 4: agente LangGraph — PENDENTE
+## Fase 4: agente LangGraph — CONCLUÍDA (2026-11-05)
+
+**Feito**
+- `agent/state.py` (`AgentState` TypedDict), `agent/prompts.py` (system prompt pt-BR com as 6 regras; instruções de análise e de redação; feedback de correção), `agent/callbacks.py` (`AuditCallbackHandler`: hash do prompt, tokens, latência, tool calls pedidas, stop_reason), `agent/llm.py` (`with_tools`, `invoke_structured`), `agent/graph.py`, `agent/runner.py` (`run_report` → `RunResult`).
+- Grafo: `collect_metrics` → `fetch_news` → `analyze` ⇄ `run_tools` (loop com orçamento `max_tool_calls`) → `write_report` (saída estruturada `ReportContent`) → `validate` → (`write_report` até `max_write_attempts`, senão) `render`. Os dois nós determinísticos nunca chamam o LLM.
+- `report/models.py` (`ReportContent`: resumo, uma seção por métrica, aprofundamento, contexto de notícias com citações `[nN]`, limitações) e `report/render.py` (Markdown completo já com a seção "Como este relatório foi produzido": run id, hash do Parquet, modelo, tokens, tool calls, guardrails e resultado da validação; banner "não verificado" quando a validação falha).
+- `guardrails/output_validation.py`: `check_structure` (todas as métricas comentadas, resumo mínimo, citações válidas, idioma pt-BR, limitações presentes) e `validate_report` (ponto único que a fase 5 estende).
+- CLI `srag-agent report [--reference-date] [--uf] [--no-news] [--output]`.
+- Testes `tests/test_graph.py` (4): execução completa com fake model (tool calls scriptadas + RSS mockado), rascunho inválido → 3 tentativas → relatório marcado como não verificado, orçamento de tools, recorte por UF. Total: 102 testes.
+
+**Execuções reais** (claude-sonnet-5-5): 1ª: 5 tool calls (crescimento por UF para SE e MS, SQL por classificação, faixa etária e panorama por UF), 2 tentativas de redação, aprovada, 31,6k tokens de entrada / 10,4k de saída. A primeira tentativa falhou porque `with_structured_output` padrão usa tool call forçado, não suportado em Sonnet 5.5 (tool call veio malformado). 2ª execução com `method="json_schema"`: 4 tool calls, 1 tentativa, aprovada.
+
+**Decisões**
+- Saída estruturada via `method="json_schema"` (recurso nativo), não `function_calling`.
+- Loop de tools como nós explícitos (`analyze`/`run_tools`) em vez de `create_react_agent`, para o orçamento e a auditoria ficarem visíveis no grafo.
+- Percentuais em pt-BR (vírgula decimal) via `MetricResult.formatted`/`pt_percent`, usados no relatório, na CLI e nos caveats.
+- Falha de parsing da saída estruturada é tratada como rascunho inválido (entra no mesmo ciclo de retry com feedback).
+
+**Validar**
+```
+uv run pytest tests/test_graph.py
+uv run srag-agent report --no-news --output /tmp/x
+```
+
 ## Fase 5: guardrails de saída — PENDENTE
 ## Fase 6: relatório final — PENDENTE
 ## Fase 7: documentação, diagrama e CI — PENDENTE

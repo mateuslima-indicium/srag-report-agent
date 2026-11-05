@@ -10,6 +10,14 @@ from pydantic import BaseModel, Field
 MetricUnit = Literal["percent_change", "share"]
 
 
+def pt_percent(value: float | None, signed: bool = False) -> str:
+    """`0.117 -> '11,7%'`, `-0.032 -> '-3,2%'` (Brazilian decimal comma); None -> 'n/d'."""
+    if value is None:
+        return "n/d"
+    text = f"{value * 100:+.1f}%" if signed else f"{value * 100:.1f}%"
+    return text.replace(".", ",")
+
+
 class MetricResult(BaseModel):
     """One computed metric with everything needed to audit and re-check it."""
 
@@ -30,6 +38,11 @@ class MetricResult(BaseModel):
     @property
     def as_percent(self) -> float | None:
         return None if self.value is None else self.value * 100
+
+    @property
+    def formatted(self) -> str:
+        """Value as shown in the report, e.g. `+61,7%` for changes and `11,8%` for shares."""
+        return pt_percent(self.value, signed=self.unit == "percent_change")
 
 
 class SeriesPoint(BaseModel):
