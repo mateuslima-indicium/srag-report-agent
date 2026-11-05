@@ -53,7 +53,30 @@ uv run pytest
 uv run python scripts/build_dataset.py
 ```
 
-## Fase 2: métricas e gráficos — PENDENTE
+## Fase 2: métricas e gráficos — CONCLUÍDA (2026-11-05)
+
+**Feito**
+- `metrics/models.py`: `MetricResult` (value, unit, numerator, denominator, janela, reference_date, uf, definition, caveats, extra), `SeriesPoint`/`SeriesResult` (flag `preliminary` + `preliminary_cutoff`), `MetricsBundle`.
+- `metrics/base.py`: `Window`, `resolve_reference_date` (default = max `dt_sin_pri`; rejeita datas futuras), `validate_uf`, `count_cases` parametrizado, `PRELIMINARY_DAYS = 14`.
+- `metrics/cases.py` (crescimento 7 e 30 dias), `mortality.py`, `icu.py`, `vaccination.py` (covid e gripe), `series.py` (diária 30 dias zero-filled, mensal 12 meses completos), `collect.py` (`collect_metrics`).
+- `report/charts.py`: dois PNG 1600x900 @150 dpi, uma cor para a série, cinza para preliminar, faixa sombreada no diário, rótulos pt-BR com separador de milhar, fonte no rodapé.
+- CLI: `srag-agent metrics [--reference-date] [--uf]` e `srag-agent charts [--output]`.
+- Testes: `tests/synthetic.py` (dataset construído à mão: crescimento 97/60 e 28/21, mortalidade 10/85, UTI 20/90, vacinação 30/90 e 40/90), `tests/test_metrics.py` (8), `tests/test_charts.py` (1).
+
+**Valores reais (referência 2026-11-01, Brasil)**: crescimento 7d -75,5% (633/2582) e 30d -35,5% (10.788/16.734), ambos dominados pela subnotificação; mortalidade 4,1% (191/4.636); UTI 28,8% (2.625/9.114); vacinação covid 39,1%, gripe 39,6%.
+
+**Decisões**
+- Além do valor na janela pedida, `case_growth` traz em `extra`/caveat o crescimento "consolidado" (mesma janela terminando no corte preliminar, `latest - 14 dias`) para o LLM contextualizar a queda artificial sem reabrir a decisão do default de `reference_date`.
+- A flag `preliminary` é relativa à data máxima dos dados, não à `reference_date` pedida: um relatório retroativo não marca nada como preliminar.
+- Vacinação vira duas métricas (`vaccination_covid`, `vaccination_flu`), as duas proxies declaradas.
+
+**Validar**
+```
+uv run pytest
+uv run srag-agent metrics
+uv run srag-agent charts
+```
+
 ## Fase 3: tools, notícias e guardrail de SQL — PENDENTE
 ## Fase 4: agente LangGraph — PENDENTE
 ## Fase 5: guardrails de saída — PENDENTE
