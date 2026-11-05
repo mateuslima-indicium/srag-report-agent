@@ -147,6 +147,16 @@ uv run srag-agent report --no-news --output /tmp/x
 uv run pytest tests/test_output_guardrails.py tests/test_graph.py
 ```
 
-## Fase 6: relatório final — PENDENTE
+## Fase 6: relatório final — CONCLUÍDA (2026-11-05)
+
+**Feito**
+- `report/render.py` já entregue na fase 4 com todas as seções pedidas: título com escopo e data de referência, resumo executivo, tabela das 6 métricas (valor, numerador/denominador, janela), os dois gráficos embutidos, interpretação por métrica (texto do modelo + definição + ressalvas determinísticas), aprofundamento, contexto de notícias com tabela (id, data, fonte, link, citada), limitações e "Como este relatório foi produzido" (execução, hash SHA-256 do Parquet, modelo e tokens, tool calls, consultas de notícias, caminho da auditoria, lista de guardrails com resultado e checks da validação final).
+- Exemplo versionado: `reports/exemplo-2026-11-01.md` + `exemplo-2026-11-01-casos-diarios.png` + `exemplo-2026-11-01-casos-mensais.png` (execução real `a8d908d9`, claude-sonnet-5-5, 5 tool calls, 2 redações) e `audit/sample-run.jsonl` correspondente (31 eventos). Conferido que a amostra não contém chave nem dados individuais.
+
+**Validar**
+```
+uv run srag-agent report
+```
+
 ## Fase 7: documentação, diagrama e CI — PENDENTE
 ## Fase 8: revisão final e publicação — PENDENTE
