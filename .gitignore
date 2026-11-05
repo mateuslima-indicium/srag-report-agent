@@ -1,0 +1,35 @@
+# Segredos
+.env
+*.pem
+*.key
+
+# Dados brutos (650 MB) e banco local
+data/raw/*.csv
+data/raw/*.zip
+data/*.duckdb
+data/*.duckdb.wal
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Logs de auditoria gerados localmente (amostra versionada fica em reports/)
+audit/*.jsonl
+
+# IDE / SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Amostra de auditoria versionada
+!audit/sample-run.jsonl
+
+# Saida do build (regenerada por scripts/build_dataset.py)
+data/processed/*.tmp
