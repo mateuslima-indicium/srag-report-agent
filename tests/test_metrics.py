@@ -25,14 +25,14 @@ def con(tmp_path_factory: pytest.TempPathFactory) -> duckdb.DuckDBPyConnection:
 def test_reference_date_defaults_to_latest_onset(con) -> None:
     assert resolve_reference_date(con, None) == REFERENCE_DATE
     assert resolve_reference_date(con, date(2026, 10, 1)) == date(2026, 10, 1)
-    with pytest.raises(ValueError, match="after the latest"):
+    with pytest.raises(ValueError, match="posterior ao último caso"):
         resolve_reference_date(con, date(2026, 12, 1))
 
 
 def test_uf_validation() -> None:
     assert validate_uf(" sp ") == "SP"
     assert validate_uf(None) is None
-    with pytest.raises(ValueError, match="Unknown UF"):
+    with pytest.raises(ValueError, match="UF desconhecida"):
         validate_uf("XX")
 
 
@@ -44,6 +44,15 @@ def test_case_growth_windows(con) -> None:
     growth_7 = case_growth(con, REFERENCE_DATE, 7)
     assert (growth_7.numerator, growth_7.denominator) == (28, 21)
     assert growth_7.value == pytest.approx(1 / 3)
+
+
+def test_case_growth_reports_consolidated_value_only_when_lag_applies(con) -> None:
+    recent = case_growth(con, REFERENCE_DATE, 7)
+    assert recent.extra["consolidated_denominator"] == 21
+    assert any("preliminares" in caveat for caveat in recent.caveats)
+    retro = case_growth(con, PRELIMINARY_CUTOFF, 7)
+    assert "consolidated_value" not in retro.extra
+    assert any("antes do corte preliminar" in caveat for caveat in retro.caveats)
 
 
 def test_case_growth_with_zero_denominator_is_none(con) -> None:

@@ -61,17 +61,21 @@ def resolve_reference_date(con: duckdb.DuckDBPyConnection, requested: date | Non
     if requested is None:
         return latest
     if requested > latest:
-        msg = f"reference_date {requested} is after the latest case date {latest}"
+        msg = (
+            f"Data de referência {requested} é posterior ao último caso do banco ({latest}). "
+            "Use uma data até essa."
+        )
         raise ValueError(msg)
     return requested
 
 
 def validate_uf(uf: str | None) -> str | None:
+    """Error messages are in Portuguese: they reach the CLI user and the model as they are."""
     if uf is None:
         return None
     normalised = uf.strip().upper()
     if normalised not in schema.BRAZIL_UFS:
-        msg = f"Unknown UF {uf!r}; expected one of {', '.join(schema.BRAZIL_UFS)}"
+        msg = f"UF desconhecida {uf!r}; use uma de: {', '.join(schema.BRAZIL_UFS)}"
         raise ValueError(msg)
     return normalised
 

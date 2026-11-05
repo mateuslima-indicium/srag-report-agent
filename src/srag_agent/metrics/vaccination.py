@@ -17,8 +17,8 @@ from srag_agent.metrics.models import MetricResult
 
 _POPULATION_CAVEAT = (
     "É a proporção de vacinados entre pacientes com SRAG, não a cobertura vacinal da "
-    "população. Pacientes graves tendem a ser menos vacinados, então o valor subestima a "
-    "cobertura populacional (fonte própria: PNI/RNDS, fora do escopo deste dataset)."
+    "população: o recorte é de casos graves e não representa a população geral. A cobertura "
+    "populacional tem fonte própria (PNI/RNDS), fora do escopo deste dataset."
 )
 
 

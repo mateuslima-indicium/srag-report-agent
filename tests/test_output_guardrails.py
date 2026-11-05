@@ -41,6 +41,19 @@ def test_extract_numbers_ignores_dates_ids_and_small_counts() -> None:
     assert integers == [10788, 30]
 
 
+def test_extract_numbers_keeps_year_like_counts_and_decimals() -> None:
+    percents, integers = extract_numbers("Foram 2582 casos em 2026, taxa de 4,1 e 3,5 mil.")
+    assert integers == [2582, 2026]
+    assert percents == [4.1, 3.5]
+
+
+def test_plausible_years_are_allowed_but_year_like_counts_are_checked(bundle) -> None:
+    years = good_draft().model_copy(update={"deep_dive": "Desde 2021 e até 2027 nada mudou."})
+    assert check_numbers(years, bundle, NewsBatch(), []).passed
+    count = good_draft().model_copy(update={"deep_dive": "Foram 2041 casos na semana."})
+    assert check_numbers(count, bundle, NewsBatch(), []).unverified == ["2041"]
+
+
 def test_window_sizes_are_allowed(bundle) -> None:
     draft = good_draft().model_copy(
         update={"deep_dive": "Janelas de 7 e 30 dias; os últimos 14 dias são preliminares."}
@@ -162,6 +175,21 @@ def test_language_is_checked_per_field(bundle) -> None:
     assert result.checks["language_pt_br"] is False
     assert "executive_summary" in result.issues[0]
     assert check_structure(good_draft(), bundle, NewsBatch()).checks["language_pt_br"] is True
+
+
+def test_duplicated_metric_sections_are_rejected(bundle) -> None:
+    draft = good_draft()
+    draft.metric_sections.append(draft.metric_sections[0])
+    result = check_structure(draft, bundle, NewsBatch())
+    assert result.checks["all_metrics_commented"] is False
+    assert "case_growth_7d" in result.issues[0]
+
+
+def test_citations_are_validated_in_every_field(bundle) -> None:
+    draft = good_draft().model_copy(update={"deep_dive": "Como mostra [n7], a alta é regional."})
+    result = check_structure(draft, bundle, NewsBatch())
+    assert result.checks["news_citations_valid"] is False
+    assert "n7" in result.issues[0]
 
 
 def test_caveats_must_be_mentioned() -> None:

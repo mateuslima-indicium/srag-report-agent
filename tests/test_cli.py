@@ -37,7 +37,7 @@ def test_metrics_command_prints_table(cli_settings: Settings) -> None:
 def test_metrics_command_rejects_bad_uf(cli_settings: Settings) -> None:
     result = runner.invoke(cli.app, ["metrics", "--uf", "XX"])
     assert result.exit_code == 1
-    assert "Unknown UF" in result.output
+    assert "UF desconhecida" in result.output
 
 
 @pytest.mark.parametrize("command", ["metrics", "charts", "report"])
@@ -52,7 +52,7 @@ def test_malformed_reference_date_fails_cleanly(cli_settings: Settings, command:
 def test_report_rejects_bad_uf_before_running(cli_settings: Settings) -> None:
     result = runner.invoke(cli.app, ["report", "--uf", "XX", "--no-news"])
     assert result.exit_code == 1
-    assert "Unknown UF" in result.output
+    assert "UF desconhecida" in result.output
     assert not cli_settings.audit_dir.exists()
 
 

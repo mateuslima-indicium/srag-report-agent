@@ -103,10 +103,12 @@ def check_structure(
     commented = [section.metric_name for section in draft.metric_sections]
     missing = [name for name in expected if name not in commented]
     unknown = [name for name in commented if name not in expected]
+    duplicated = sorted({name for name in commented if commented.count(name) > 1})
     result.add(
         "all_metrics_commented",
-        not missing and not unknown,
-        f"Métricas sem seção: {missing}; nomes desconhecidos: {unknown}",
+        not missing and not unknown and not duplicated,
+        f"Métricas sem seção: {missing}; nomes desconhecidos: {unknown}; "
+        f"seções duplicadas: {duplicated}",
     )
     result.add(
         "summary_length",
@@ -115,7 +117,7 @@ def check_structure(
     )
     valid_ids = {item.id for item in news.items}
     bad_refs = sorted(draft.cited_ids - valid_ids)
-    inline_ids = set(re.findall(r"\[(n\d+)\]", draft.news_context))
+    inline_ids = set(re.findall(r"\[(n\d+)\]", draft_text(draft)))
     bad_inline = sorted(inline_ids - valid_ids)
     result.add(
         "news_citations_valid",

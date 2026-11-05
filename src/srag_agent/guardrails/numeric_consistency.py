@@ -21,14 +21,22 @@ INTEGER_TOLERANCE = 1
 IGNORED_BELOW = 13
 """Small integers (window sizes, list counts, 'duas UFs') are never flagged."""
 
+FIRST_PLAUSIBLE_YEAR = 2019
+"""Years from the dataset's first season up to the year after the reference are allowed as
+bare numbers ("em 2021"); any other four-digit value must come from a tool."""
+
 _DATE_LIKE = re.compile(
     r"\b\d{1,2}/\d{1,2}/\d{2,4}\b|\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}/\d{4}\b|\b\d{1,2}/\d{1,2}\b"
-    r"|\b(?:19|20)\d{2}\b|\b\d{1,2}h\d{0,2}\b|\bn\d+\b|\b\d{1,2}-\d{1,2}\b|\b\d{2}\+"
+    r"|\b\d{1,2}h\d{0,2}\b|\bn\d+\b|\b\d{1,2}-\d{1,2}\b|\b\d{2}\+|\bSE\s?\d{1,2}\b"
 )
+"""Dates, hours, citation ids, age bands and epidemiological weeks ("SE 44") are not counts."""
 _PERCENT = re.compile(r"([+-]?\d+(?:[.,]\d+)?)\s*%")
+_DECIMAL = re.compile(r"(?<![\d.,])[+-]?\d+,\d+(?![\d%])")
 _INTEGER = re.compile(
-    r"(?<![\d.,])[+-]?\d{1,3}(?:\.\d{3})+(?![\d,])|(?<![\d.,])[+-]?\d+(?![\d.,%])"
+    r"(?<![\d.,])[+-]?\d{1,3}(?:\.\d{3})+(?!\d|,\d)|(?<![\d.,])[+-]?\d+(?![\d.%]|,\d)"
 )
+"""Integers with or without thousands separators; a trailing comma only disqualifies the
+match when a digit follows it (decimal), not when it is punctuation ("em 2026, a taxa")."""
 _JSON_NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
 
 
@@ -69,12 +77,15 @@ def draft_text(draft: ReportContent) -> str:
 
 
 def extract_numbers(text: str) -> tuple[list[float], list[int]]:
-    """Percentages and integers written in the text (dates, years and ids removed first)."""
+    """Percentages, Brazilian decimals ("3,5") and integers written in the text, after
+    removing dates, hours, citation ids and age bands. Decimals are checked like percentages."""
     cleaned = _DATE_LIKE.sub(" ", text)
     percents = [_to_float(match) for match in _PERCENT.findall(cleaned)]
     without_percents = _PERCENT.sub(" ", cleaned)
+    percents += [_to_float(match) for match in _DECIMAL.findall(without_percents)]
+    without_decimals = _DECIMAL.sub(" ", without_percents)
     integers = []
-    for match in _INTEGER.findall(without_percents):
+    for match in _INTEGER.findall(without_decimals):
         value = _to_int(match)
         if abs(value) >= IGNORED_BELOW:
             integers.append(value)
@@ -92,6 +103,7 @@ def allowed_values(
 ) -> tuple[set[int], set[float]]:
     """All numbers the writer may legitimately quote."""
     integers: set[int] = {PRELIMINARY_DAYS, *GROWTH_WINDOWS, *RATE_WINDOWS}
+    integers.update(range(FIRST_PLAUSIBLE_YEAR, bundle.reference_date.year + 2))
     percents: set[float] = {0.0}
     for metric in bundle.metrics:
         window_days = (metric.window_end - metric.window_start).days + 1
