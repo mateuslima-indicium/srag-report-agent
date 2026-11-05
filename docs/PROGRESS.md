@@ -28,7 +28,31 @@ uv run ruff format --check .
 uv run srag-agent version
 ```
 
-## Fase 1: pipeline de dados — PENDENTE
+## Fase 1: pipeline de dados — CONCLUÍDA (2026-11-05)
+
+**Feito**
+- `src/srag_agent/data/schema.py`: contrato de colunas (lidas, mantidas, descartadas por privacidade), dicionários de códigos em português, UFs, faixas etárias, janelas plausíveis de datas.
+- `src/srag_agent/data/cleaning.py`: funções puras vetorizadas (`parse_mixed_date` ISO + dd/mm/yyyy, `nullify_outside`, `to_code`, `age_in_years`, `age_band`, `hash_identifier`, `clean_cases`, `drop_duplicate_notifications`) com `CleaningStats`.
+- `src/srag_agent/data/pipeline.py`: `read_raw_csv` (DuckDB `read_csv`, só as colunas do contrato, `all_varchar`), `build_processed_frame`, `write_parquet` (zstd), `build_dataset`, `render_quality_report` (pt-BR). Data de extração derivada do nome do arquivo (`*-dd-mm-yyyy.csv`).
+- `src/srag_agent/data/db.py`: `build_database` (tabela `cases` com datas em DATE + views `daily_cases`, `monthly_cases`, `cases_by_uf`), `ensure_database` (reconstrói o `.duckdb` a partir do Parquet quando ausente ou desatualizado, para o clone limpo funcionar), `open_readonly`, `fetch_all`/`fetch_one` parametrizados, `file_sha256`.
+- `scripts/download_data.py` (streaming httpx, pula existentes, confere content-length) e `scripts/build_dataset.py`.
+- Testes: `tests/test_cleaning.py` (7) e `tests/test_pipeline.py` (8) sobre `tests/fixtures/srag_sample_02-11-2026.csv` (dois formatos de data, ano 8202, ano 2029, código inválido, duplicata, notificação sem número, idade 150). Teste afirma que o Parquet tem exatamente `PROCESSED_COLUMNS` e nenhuma coluna da lista de privacidade.
+
+**Build real**: 577.038 linhas (336.432 + 240.606, 0 duplicatas), Parquet 12,1 MB em `data/processed/srag.parquet` (versionado), `data/srag.duckdb` (ignorado). Contagens mensais idênticas ao perfil da seção 2.4 do doc de decisões. `docs/data-quality.md` gerado.
+
+**Decisões e correções**
+- Os CSVs de 2026 são **UTF-8**, não latin-1 como dizia o doc de decisões (medido: 0 erros de decode UTF-8 nos dois arquivos; DuckDB rejeita `encoding='latin-1'`). O leitor tenta UTF-8 e depois latin-1; `data/raw/README.md` corrigido.
+- Colunas do Parquet mantêm os nomes do dicionário DATASUS em minúsculas (rastreabilidade) + derivadas `age_years`, `age_band`, `notif_hash`, `source_file`.
+- `NU_IDADE_N` entra na lista de descarte (só a idade em anos arredondada e a faixa ficam).
+- Janela de datas de vacinação começa em 2020-12-01 (a de episódio em 2024-12-01).
+- Datas são gravadas como timestamp no Parquet e convertidas para `DATE` ao carregar no DuckDB.
+
+**Validar**
+```
+uv run pytest
+uv run python scripts/build_dataset.py
+```
+
 ## Fase 2: métricas e gráficos — PENDENTE
 ## Fase 3: tools, notícias e guardrail de SQL — PENDENTE
 ## Fase 4: agente LangGraph — PENDENTE

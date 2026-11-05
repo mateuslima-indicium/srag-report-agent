@@ -12,7 +12,7 @@ Página do dataset: https://dadosabertos.saude.gov.br/dataset/srag-2019-a-2026
 | `INFLUD26-02-11-2026.csv` | Banco vivo 2026, extração de 02/11/2026 | https://s3.sa-east-1.amazonaws.com/ckan.saude.gov.br/SRAG/2026/INFLUD26-02-11-2026.csv |
 | `INFLUD25-02-11-2026.csv` | Banco vivo 2025, extração de 02/11/2026 | https://s3.sa-east-1.amazonaws.com/ckan.saude.gov.br/SRAG/2025/INFLUD25-02-11-2026.csv |
 
-Formato dos CSVs: separador `;`, campos entre aspas, encoding latin-1, 194 colunas.
+Formato dos CSVs: separador `;`, campos entre aspas, encoding UTF-8 (extrações anteriores eram latin-1; o pipeline tenta os dois), 194 colunas.
 Os dois anos foram baixados porque o relatório exige os últimos 12 meses de casos.
 
 Os CSVs somam cerca de 650 MB. Não versionar no Git; adicione `data/raw/*.csv` ao `.gitignore`.
