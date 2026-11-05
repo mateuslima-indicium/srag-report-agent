@@ -13,18 +13,22 @@ from pydantic import BaseModel, Field
 
 from srag_agent.audit import AuditLogger
 from srag_agent.data import schema
-from srag_agent.data.db import QUERYABLE_RELATIONS
+from srag_agent.data.db import CASES_TABLE, QUERYABLE_RELATIONS
 from srag_agent.guardrails.sql_guard import SqlRejected, guard_sql
 
 SQL_TIMEOUT_SECONDS = 15.0
 MAX_RESULT_CHARS = 6000
+MAX_AUDITED_RESULT_CHARS = 4000
+ROW_LEVEL_RELATIONS: tuple[str, ...] = (CASES_TABLE,)
+"""Relations with one row per patient: the guard only lets aggregated queries read them."""
 
 
 class SqlInput(BaseModel):
     sql: str = Field(
         description=(
-            "Um único SELECT sobre as relações `cases`, `daily_cases`, `monthly_cases` ou "
-            "`cases_by_uf`. Sem DDL/DML, sem funções de arquivo. O resultado é limitado."
+            "Um único SELECT agregado (GROUP BY, DISTINCT ou count/sum/avg) sobre `cases`, "
+            "ou qualquer SELECT sobre as views `daily_cases`, `monthly_cases`, `cases_by_uf`. "
+            "Sem DDL/DML, sem funções de arquivo. O resultado é limitado."
         )
     )
     purpose: str = Field(
@@ -68,7 +72,7 @@ def build_sql_tool(
     def run_readonly_sql(sql: str, purpose: str) -> str:
         started = time.perf_counter()
         try:
-            guarded = guard_sql(sql, QUERYABLE_RELATIONS, row_limit)
+            guarded = guard_sql(sql, QUERYABLE_RELATIONS, row_limit, ROW_LEVEL_RELATIONS)
         except SqlRejected as rejection:
             audit.log("guardrail", "sql_guard", passed=False, sql=sql, reason=str(rejection))
             return f"CONSULTA REJEITADA pelo guardrail de SQL: {rejection}"
@@ -79,6 +83,7 @@ def build_sql_tool(
             reason = str(error).splitlines()[0]
             audit.log("tool_call", "run_readonly_sql", purpose=purpose, sql=sql, error=reason)
             return f"ERRO ao executar a consulta: {reason}"
+        payload = _serialise(columns, rows)
         audit.log(
             "tool_call",
             "run_readonly_sql",
@@ -86,8 +91,9 @@ def build_sql_tool(
             sql=sql,
             rows=len(rows),
             duration_ms=round((time.perf_counter() - started) * 1000),
+            result=payload[:MAX_AUDITED_RESULT_CHARS],
         )
-        return _serialise(columns, rows)
+        return payload
 
     return StructuredTool.from_function(
         func=run_readonly_sql,
@@ -104,10 +110,12 @@ def tool_description() -> str:
         f"{column} " + " ".join(f"{code}={label}" for code, label in labels.items())
         for column, labels in schema.CODE_LABELS.items()
     )
+    views = ", ".join(f"`{r}`" for r in QUERYABLE_RELATIONS if r not in ROW_LEVEL_RELATIONS)
     return (
         "Executa um SELECT somente leitura no banco de casos de SRAG para aprofundar a "
         "análise (ex.: por UF, faixa etária, sexo, classificação final). Tabela `cases` "
-        f"(colunas: {columns}) e views {', '.join(f'`{r}`' for r in QUERYABLE_RELATIONS[1:])}. "
+        f"(uma linha por caso; colunas: {columns}) e views {views}. "
         f"Códigos: {codes}. Datas em DATE; age_band em faixas de 10 anos; sg_uf_not é a UF. "
-        "Prefira consultas agregadas; o resultado é limitado a poucas linhas."
+        "Consultas sobre `cases` precisam ser agregadas (GROUP BY, DISTINCT, count/sum/avg): "
+        "linhas individuais são recusadas. O resultado é limitado a poucas linhas."
     )

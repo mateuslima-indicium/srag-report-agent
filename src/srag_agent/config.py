@@ -12,6 +12,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
+def project_relative(path: Path) -> str:
+    """Path as written in reports and audit trails: relative to the repository, never to the
+    user's home or current directory, so that versioned artifacts carry no local details."""
+    try:
+        return path.resolve().relative_to(PROJECT_ROOT).as_posix()
+    except ValueError:
+        return path.name
+
+
 class Settings(BaseSettings):
     """Runtime configuration. Secrets are never logged or rendered."""
 

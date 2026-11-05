@@ -9,10 +9,11 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, Field
 
 from srag_agent import __version__
+from srag_agent.config import project_relative
 from srag_agent.data.db import file_sha256
 from srag_agent.guardrails.output_validation import ValidationResult
 from srag_agent.metrics.base import scope_label
-from srag_agent.metrics.models import MetricsBundle
+from srag_agent.metrics.models import MetricsBundle, pt_percent
 from srag_agent.news.models import NewsBatch
 from srag_agent.report.charts import plot_daily_cases, plot_monthly_cases, thousands
 from srag_agent.report.models import ReportContent
@@ -36,8 +37,7 @@ class Provenance(BaseModel):
     parquet_sha256: str
     parquet_path: str
     latest_case_date: str
-    news_providers: list[str]
-    news_queries: list[str]
+    news_summary: str = Field(description="Providers and queries, or why there is no news")
     llm_calls: int
     model_tool_calls: int = Field(description="Tool calls requested by the model")
     input_tokens: int
@@ -53,12 +53,27 @@ def _metrics_table(bundle: MetricsBundle) -> list[str]:
         "|---|---:|---:|---|",
     ]
     for metric in bundle.metrics:
+        value = f"**{metric.formatted}**"
+        consolidated = metric.extra.get("consolidated_value")
+        if consolidated is not None:
+            value += f"<br>consolidado: {pt_percent(float(consolidated), signed=True)}"
         lines.append(
-            f"| {metric.label} | **{metric.formatted}** | "
+            f"| {metric.label} | {value} | "
             f"{thousands(metric.numerator)} / {thousands(metric.denominator)} | "
             f"{metric.window_start:%d/%m/%Y} a {metric.window_end:%d/%m/%Y} |"
         )
     return lines
+
+
+def _news_summary(news: NewsBatch) -> str:
+    if news.items:
+        return f"{', '.join(news.providers)}; consultas: {', '.join(news.queries)}"
+    return "nenhuma notícia (" + ("; ".join(news.errors) or "nenhum item encontrado") + ")"
+
+
+def _markdown_cell(text: str) -> str:
+    """Escape what would break a Markdown table row (news titles are untrusted text)."""
+    return text.replace("|", "\\|").replace("[", "\\[").replace("]", "\\]")
 
 
 def _metric_sections(draft: ReportContent | None, bundle: MetricsBundle) -> list[str]:
@@ -88,7 +103,8 @@ def _news_section(draft: ReportContent | None, news: NewsBatch) -> list[str]:
         when = item.published_at.strftime("%d/%m/%Y") if item.published_at else "n/d"
         mark = "sim" if item.id in cited else ""
         lines.append(
-            f"| {item.id} | {when} | {item.source} | [{item.title}]({item.url}) | {mark} |"
+            f"| {item.id} | {when} | {_markdown_cell(item.source)} | "
+            f"[{_markdown_cell(item.title)}]({item.url}) | {mark} |"
         )
     if news.discarded:
         lines += [
@@ -116,8 +132,7 @@ def _provenance_section(provenance: Provenance, validation: ValidationResult | N
         f"- **Ferramentas:** métricas e séries calculadas por código antes do modelo, mais "
         f"{provenance.model_tool_calls} chamada(s) de ferramenta pedida(s) pelo modelo; todos "
         "os números vêm de SQL determinístico sobre DuckDB, nunca do modelo.",
-        f"- **Notícias:** {', '.join(provenance.news_providers) or 'nenhuma fonte respondeu'}; "
-        f"consultas: {', '.join(provenance.news_queries) or 'n/a'}.",
+        f"- **Notícias:** {provenance.news_summary}.",
         f"- **Auditoria completa:** `{provenance.audit_path}` "
         "(JSONL com cada chamada, decisão e guardrail).",
         "- **Guardrails executados:**",
@@ -202,10 +217,9 @@ def write_report_files(ctx: GraphContext, state: AgentState) -> tuple[Path, list
         run_id=ctx.audit.run_id,
         model=ctx.model_name,
         parquet_sha256=file_sha256(parquet) if parquet.exists() else "n/a",
-        parquet_path=_relative(parquet),
+        parquet_path=project_relative(parquet),
         latest_case_date=bundle.latest_case_date.isoformat(),
-        news_providers=state["news"].providers,
-        news_queries=state["news"].queries,
+        news_summary=_news_summary(state["news"]),
         llm_calls=ctx.audit.count("llm_call"),
         model_tool_calls=state.get("tool_calls_used", 0),
         input_tokens=input_tokens,
@@ -214,7 +228,7 @@ def write_report_files(ctx: GraphContext, state: AgentState) -> tuple[Path, list
             {"name": e.name, "passed": e.payload.get("passed")}
             for e in ctx.audit.of_type("guardrail")
         ],
-        audit_path=_relative(ctx.audit.path),
+        audit_path=project_relative(ctx.audit.path),
     )
     markdown = render_markdown(
         state.get("draft"),
@@ -227,10 +241,3 @@ def write_report_files(ctx: GraphContext, state: AgentState) -> tuple[Path, list
     report_path = folder / f"{stem}.md"
     report_path.write_text(markdown, encoding="utf-8")
     return report_path, [daily, monthly]
-
-
-def _relative(path: Path) -> str:
-    try:
-        return path.relative_to(Path.cwd()).as_posix()
-    except ValueError:
-        return path.as_posix()

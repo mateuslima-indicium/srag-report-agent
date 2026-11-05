@@ -14,7 +14,7 @@ from srag_agent.agent.callbacks import AuditCallbackHandler
 from srag_agent.agent.graph import GraphContext, build_graph
 from srag_agent.agent.llm import build_chat_model, model_label
 from srag_agent.audit import AuditLogger
-from srag_agent.config import Settings
+from srag_agent.config import Settings, project_relative
 from srag_agent.data.db import ensure_database, file_sha256, open_readonly
 from srag_agent.guardrails.output_validation import ValidationResult
 from srag_agent.metrics.models import MetricsBundle
@@ -74,7 +74,9 @@ def run_report(
         ctx = GraphContext(
             settings=settings, con=con, audit=audit, model=chat_model, tools=[], model_name=name
         )
-        ctx.tools = build_tools(con, audit, lambda: ctx.news, settings.sql_row_limit)
+        ctx.tools = build_tools(
+            con, audit, lambda: ctx.news, ctx.replace_news, settings.sql_row_limit
+        )
         graph = build_graph(ctx)
         try:
             final = graph.invoke(
@@ -100,7 +102,7 @@ def run_report(
         "run_end",
         "srag-report-agent",
         status="ok" if validation is not None and validation.passed else "unverified",
-        report=str(final["report_path"]),
+        report=project_relative(final["report_path"]),
         llm_calls=audit.count("llm_call"),
         input_tokens=input_tokens,
         output_tokens=output_tokens,

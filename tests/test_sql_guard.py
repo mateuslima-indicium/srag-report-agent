@@ -78,6 +78,48 @@ def test_rejected_queries(sql: str, reason: str) -> None:
         guard_sql(sql, QUERYABLE_RELATIONS, row_limit=50)
 
 
+AGGREGATED = [
+    "SELECT count(*) FROM cases",
+    "SELECT sg_uf_not, count(*) AS n FROM cases GROUP BY 1 ORDER BY n DESC",
+    "SELECT DISTINCT sg_uf_not FROM cases",
+    "SELECT round(100.0 * sum(CASE WHEN uti = 1 THEN 1 ELSE 0 END) / count(*), 1) FROM cases",
+    "SELECT * FROM (SELECT age_band, count(*) AS n FROM cases GROUP BY 1) s ORDER BY n",
+    "WITH r AS (SELECT * FROM cases WHERE uti = 1) SELECT uti, count(*) FROM r GROUP BY 1",
+    "SELECT count(*) FROM cases UNION ALL SELECT count(*) FROM cases",
+    "SELECT * FROM daily_cases",
+    "SELECT * FROM cases_by_uf ORDER BY deaths DESC LIMIT 5",
+    "SELECT c.sg_uf_not, count(*) FROM cases c JOIN cases_by_uf u ON u.uf = c.sg_uf_not GROUP BY 1",
+    "SELECT (SELECT count(*) FROM cases) AS n",
+    "SELECT min(dt_sin_pri), max(dt_sin_pri) FROM cases WHERE sg_uf_not = 'AM'",
+]
+
+ROW_LEVEL = [
+    "SELECT * FROM cases",
+    "SELECT sg_uf_not FROM cases LIMIT 1",
+    "SELECT dt_sin_pri, age_years FROM cases WHERE age_years < 1",
+    "SELECT * FROM (SELECT * FROM cases) s",
+    "WITH r AS (SELECT * FROM cases) SELECT * FROM r",
+    "SELECT count(*) OVER () FROM cases",
+    "SELECT count(*) FROM cases UNION ALL SELECT uti FROM cases",
+    "SELECT c.*, u.deaths FROM cases c JOIN cases_by_uf u ON u.uf = c.sg_uf_not",
+    "SELECT count(*), sg_uf_not FROM cases",
+    "SELECT age_years, (SELECT count(*) FROM cases) FROM cases",
+]
+
+
+@pytest.mark.parametrize("sql", AGGREGATED)
+def test_aggregated_queries_may_read_the_cases_table(sql: str) -> None:
+    assert guard_sql(sql, QUERYABLE_RELATIONS, 50, row_level_relations=("cases",)).relations
+
+
+@pytest.mark.parametrize("sql", ROW_LEVEL)
+def test_row_level_queries_over_cases_are_refused(sql: str) -> None:
+    with pytest.raises(SqlRejected, match="precisam devolver agregados"):
+        guard_sql(sql, QUERYABLE_RELATIONS, 50, row_level_relations=("cases",))
+    # the same statement is fine when no relation is declared row-level
+    assert guard_sql(sql, QUERYABLE_RELATIONS, 50).relations
+
+
 def test_cte_names_are_not_treated_as_tables() -> None:
     sql = "WITH a AS (SELECT * FROM cases), b AS (SELECT * FROM a) SELECT count(*) FROM b"
     assert guard_sql(sql, QUERYABLE_RELATIONS, 10).relations == ("cases",)

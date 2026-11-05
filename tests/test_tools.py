@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from langchain_core.tools import StructuredTool
 from pydantic import ValidationError
 
 from srag_agent.audit import AuditLogger
@@ -14,17 +16,19 @@ from srag_agent.news.models import NewsBatch
 from srag_agent.tools import build_tools
 from tests.synthetic import build_synthetic_database
 
+Toolkit = tuple[dict[str, StructuredTool], AuditLogger]
+
 
 @pytest.fixture
-def toolkit(tmp_path: Path):
+def toolkit(tmp_path: Path) -> Iterator[Toolkit]:
     database = build_synthetic_database(tmp_path)
     audit = AuditLogger(tmp_path / "audit", run_id="test")
     with open_readonly(database) as con:
-        tools = {t.name: t for t in build_tools(con, audit, NewsBatch, row_limit=5)}
-        yield tools, audit
+        tools = build_tools(con, audit, NewsBatch, lambda batch: None, row_limit=5)
+        yield {t.name: t for t in tools}, audit
 
 
-def test_tool_names_and_schemas(toolkit) -> None:
+def test_tool_names_and_schemas(toolkit: Toolkit) -> None:
     tools, _ = toolkit
     assert set(tools) == {
         "get_case_growth",
@@ -40,7 +44,7 @@ def test_tool_names_and_schemas(toolkit) -> None:
     assert schema["properties"]["window_days"]["enum"] == [7, 30]
 
 
-def test_metric_tool_returns_json_and_logs(toolkit) -> None:
+def test_metric_tool_returns_json_and_logs(toolkit: Toolkit) -> None:
     tools, audit = toolkit
     payload = json.loads(tools["get_case_growth"].invoke({"window_days": 7}))
     assert (payload["numerator"], payload["denominator"]) == (28, 21)
@@ -48,20 +52,24 @@ def test_metric_tool_returns_json_and_logs(toolkit) -> None:
     assert [r["name"] for r in rates] == ["vaccination_covid", "vaccination_flu"]
     assert audit.count("tool_call", "get_case_growth") == 1
     assert audit.events[0].payload["args"]["reference_date"] == "2026-10-31"
+    assert json.loads(audit.events[0].payload["result"])["numerator"] == 28
 
 
-def test_metric_tool_reports_invalid_arguments(toolkit) -> None:
-    tools, _ = toolkit
+def test_metric_tool_reports_invalid_arguments(toolkit: Toolkit) -> None:
+    tools, audit = toolkit
     assert (
         tools["get_icu_rate"]
         .invoke({"uf": "SP", "reference_date": "2030-01-01"})
         .startswith("ERRO")
     )
+    failed = audit.of_type("tool_call")[-1]
+    assert failed.payload["args"] == {"uf": "SP", "reference_date": "2030-01-01", "window_days": 30}
+    assert "posterior ao último caso" in failed.payload["error"]
     with pytest.raises(ValidationError, match="uf"):
         tools["get_icu_rate"].invoke({"uf": "XX"})
 
 
-def test_sql_tool_executes_guarded_query_with_limit(toolkit) -> None:
+def test_sql_tool_executes_guarded_query_with_limit(toolkit: Toolkit) -> None:
     tools, audit = toolkit
     result = json.loads(
         tools["run_readonly_sql"].invoke(
@@ -74,11 +82,22 @@ def test_sql_tool_executes_guarded_query_with_limit(toolkit) -> None:
     assert result["columns"] == ["sg_uf_not", "n"]
     assert result["rows"] == [["MG", 60], ["RJ", 12], ["SP", 97]]
     big = json.loads(
-        tools["run_readonly_sql"].invoke({"sql": "SELECT * FROM cases", "purpose": "t"})
+        tools["run_readonly_sql"].invoke({"sql": "SELECT * FROM daily_cases", "purpose": "t"})
     )
     assert len(big["rows"]) == 5
     assert audit.count("guardrail", "sql_guard") == 2
     assert all(e.payload["passed"] for e in audit.of_type("guardrail"))
+    assert audit.of_type("tool_call")[0].payload["result"].startswith('{"columns"')
+
+
+def test_sql_tool_refuses_patient_level_rows(toolkit: Toolkit) -> None:
+    tools, audit = toolkit
+    answer = tools["run_readonly_sql"].invoke(
+        {"sql": "SELECT dt_sin_pri, age_years FROM cases WHERE age_years < 1", "purpose": "x"}
+    )
+    assert answer.startswith("CONSULTA REJEITADA")
+    assert "agregados" in answer
+    assert audit.of_type("guardrail")[-1].payload["passed"] is False
 
 
 def test_sql_tool_result_is_bounded_in_size() -> None:
@@ -92,18 +111,20 @@ def test_sql_tool_result_is_bounded_in_size() -> None:
     assert 1 <= len(payload["rows"]) < 200
 
 
-def test_sql_tool_rejects_and_audits(toolkit) -> None:
+def test_sql_tool_rejects_and_audits(toolkit: Toolkit) -> None:
     tools, audit = toolkit
     answer = tools["run_readonly_sql"].invoke({"sql": "DELETE FROM cases", "purpose": "x"})
     assert answer.startswith("CONSULTA REJEITADA")
     rejected = audit.of_type("guardrail")[-1]
     assert rejected.payload["passed"] is False
     assert "Apenas SELECT" in rejected.payload["reason"]
-    error = tools["run_readonly_sql"].invoke({"sql": "SELECT nope FROM cases", "purpose": "x"})
+    error = tools["run_readonly_sql"].invoke(
+        {"sql": "SELECT count(nope) FROM cases", "purpose": "x"}
+    )
     assert error.startswith("ERRO ao executar")
 
 
-def test_news_tool_without_items(toolkit) -> None:
+def test_news_tool_without_items(toolkit: Toolkit) -> None:
     tools, audit = toolkit
     assert tools["get_recent_news"].invoke({}).startswith("Sem notícias")
     assert audit.count("tool_call", "get_recent_news") == 1

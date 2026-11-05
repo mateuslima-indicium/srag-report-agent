@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from pydantic import SecretStr
 
 from srag_agent.agent.llm import FAKE_MODEL_NAME, build_chat_model, model_label
-from srag_agent.config import Settings
+from srag_agent.config import PROJECT_ROOT, Settings, project_relative
 
 
 def test_settings_without_key_reports_no_key(settings: Settings) -> None:
@@ -23,6 +25,12 @@ def test_secret_is_not_exposed_in_repr(settings: Settings) -> None:
     secret = settings.model_copy(update={"anthropic_api_key": SecretStr("sk-test-123")})
     assert "sk-test-123" not in repr(secret)
     assert "sk-test-123" not in secret.model_dump_json()
+
+
+def test_paths_in_artifacts_never_reveal_the_local_tree(tmp_path: Path) -> None:
+    assert project_relative(PROJECT_ROOT / "audit" / "run-x.jsonl") == "audit/run-x.jsonl"
+    outside = tmp_path / "relatorio-srag-2026-11-01.md"
+    assert project_relative(outside) == "relatorio-srag-2026-11-01.md"
 
 
 def test_factory_returns_fake_model_without_key(settings: Settings) -> None:
