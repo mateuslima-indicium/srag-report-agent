@@ -36,8 +36,10 @@ def good_draft(news_ids: list[str] | None = None) -> ReportContent:
             metric_name=name,
             headline=f"Leitura da métrica {name}",
             interpretation=(
-                "Os casos recentes de SRAG são preliminares por atraso de notificação, "
-                "e a mortalidade considera apenas casos com desfecho conhecido."
+                "Os casos recentes de SRAG são preliminares por atraso de notificação; "
+                "a mortalidade considera apenas casos com desfecho conhecido; a taxa de UTI é "
+                "uma proporção de internados, não ocupação de leitos; a vacinação é um proxy "
+                "entre pacientes, não cobertura populacional."
             ),
         )
         for name in METRIC_NAMES
@@ -150,6 +152,40 @@ def test_invalid_draft_is_retried_then_marked_unverified(synthetic_settings: Set
     assert events[-1]["payload"]["status"] == "unverified"
     assert any(e["name"] == "max_write_attempts" for e in events)
     assert any(e["type"] == "error" and e["name"] == "write_report" for e in events)
+
+
+def test_invented_number_triggers_regeneration_then_passes(synthetic_settings: Settings) -> None:
+    invented = good_draft().model_copy(
+        update={"deep_dive": "Na UF SP a mortalidade chegou a 13,9% com 1234 casos."}
+    )
+    responses = [
+        AIMessage(content="Sem aprofundamento."),
+        AIMessage(content=invented.model_dump_json()),
+        AIMessage(content=good_draft().model_dump_json()),
+    ]
+    result = _run(synthetic_settings, responses, include_news=False)
+
+    assert result.validation is not None and result.validation.passed
+    assert result.write_attempts == 2
+    events = [
+        json.loads(line) for line in result.audit_path.read_text(encoding="utf-8").splitlines()
+    ]
+    numeric = [e for e in events if e["name"] == "numeric_consistency"]
+    assert [e["payload"]["passed"] for e in numeric] == [False, True]
+    assert numeric[0]["payload"]["unverified"] == ["13,9%", "1234"]
+    assert "⚠️" not in result.report_path.read_text(encoding="utf-8")
+
+
+def test_persistent_invented_number_is_marked_unverified(synthetic_settings: Settings) -> None:
+    invented = good_draft().model_copy(update={"deep_dive": "Foram 9999 casos (99,9%)."})
+    responses = [AIMessage(content="ok")] + [AIMessage(content=invented.model_dump_json())] * 3
+    result = _run(synthetic_settings, responses, include_news=False)
+
+    assert result.validation is not None and not result.validation.passed
+    assert result.write_attempts == 3
+    text = result.report_path.read_text(encoding="utf-8")
+    assert "não verificados" in text
+    assert "Números sem origem nas ferramentas: 99,9%, 9999" in text
 
 
 def test_tool_budget_is_enforced(synthetic_settings: Settings) -> None:

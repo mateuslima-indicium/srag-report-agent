@@ -66,6 +66,7 @@ def run_report(
             "max_news_items": settings.max_news_items,
             "sql_row_limit": settings.sql_row_limit,
             "max_write_attempts": settings.max_write_attempts,
+            "max_total_tokens": settings.max_total_tokens,
         },
     )
     handler = AuditCallbackHandler(audit, name)

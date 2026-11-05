@@ -125,7 +125,28 @@ uv run pytest tests/test_graph.py
 uv run srag-agent report --no-news --output /tmp/x
 ```
 
-## Fase 5: guardrails de saída — PENDENTE
+## Fase 5: guardrails de saída e endurecimento — CONCLUÍDA (2026-11-05)
+
+**Feito**
+- `guardrails/numeric_consistency.py`: extrai percentuais e inteiros do texto gerado (ignorando datas, anos, ids `nN`, faixas etárias, inteiros < 13) e confere contra o conjunto permitido: numeradores/denominadores/extras/valores das métricas (como ratio e como percentual), rótulos/definições/caveats, pontos e totais das séries, tamanhos de janela, títulos das notícias e todos os números dos resultados de ferramentas (JSON parseado). Tolerância 0,1 p.p. e 1 unidade. Devolve a lista do que não bateu para o feedback de regeneração.
+- `guardrails/pii.py`: CPF (com e sem máscara), e-mail, telefone BR, CNS, número de notificação (12 a 14 dígitos).
+- `guardrails/output_validation.py`: além da estrutura, `check_caveats` (cada métrica precisa mencionar sua ressalva: preliminar/atraso, desfecho, leito/ocupação/proporção, população/cobertura/proxy), `check_clinical_advice` (6 padrões de recomendação individual), `check_pii`; `validate_report` audita cada guardrail separadamente e mescla.
+- Orçamentos: `max_tool_calls` (nó `run_tools`), `max_write_attempts` (aresta condicional), `max_total_tokens=200k` (nó `analyze` desliga as tools e registra `token_budget`), `recursion_limit=60` no grafo, `max_retries=3` com backoff exponencial do SDK da Anthropic (cobre `RateLimitError`/`APIConnectionError`), timeout de 120 s por chamada e 15 s por SQL.
+- Prompt endurecido: "não some, subtraia ou calcule percentuais por conta própria".
+- Testes: `tests/test_output_guardrails.py` (17) e mais 2 testes de integração no grafo: número inventado → regeneração → aprovado; número inventado persistente → 3 tentativas → relatório com banner "não verificado" listando os números sem origem. Total: 122 testes.
+
+**Execução real**: na 1ª redação o modelo escreveu "600" (leitura a olho da série diária); `numeric_consistency` reprovou (149 números conferidos, 1 sem origem), a 2ª redação passou em todos os 9 checks.
+
+**Decisões**
+- Tolerância do guardrail numérico também aceita um número que esteja a 0,1 p.p. de qualquer razão derivável dos caveats (ex.: "% sem desfecho"), porque esses textos são determinísticos.
+- Números que aparecem em títulos de notícias são permitidos (o modelo pode citá-los como "segundo o título"), mas não números derivados deles.
+- Orçamento de tokens medido pela própria trilha de auditoria (sem estado extra).
+
+**Validar**
+```
+uv run pytest tests/test_output_guardrails.py tests/test_graph.py
+```
+
 ## Fase 6: relatório final — PENDENTE
 ## Fase 7: documentação, diagrama e CI — PENDENTE
 ## Fase 8: revisão final e publicação — PENDENTE

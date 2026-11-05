@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     max_output_tokens: int = Field(default=8000, ge=256)
     llm_timeout_seconds: float = Field(default=120.0, gt=0)
     max_write_attempts: int = Field(default=3, ge=1)
+    max_total_tokens: int = Field(default=200_000, ge=10_000)
 
     @property
     def raw_dir(self) -> Path:

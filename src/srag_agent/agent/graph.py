@@ -121,8 +121,18 @@ def _analyze(ctx: GraphContext, state: AgentState) -> AgentState:
                 )
             ),
         ]
-    budget_left = ctx.settings.max_tool_calls - state.get("tool_calls_used", 0)
-    model = with_tools(ctx.model, ctx.tools if budget_left > 0 else [])
+    calls_left = ctx.settings.max_tool_calls - state.get("tool_calls_used", 0)
+    tokens_used = _tokens_used(ctx.audit)
+    if tokens_used > ctx.settings.max_total_tokens:
+        ctx.audit.log(
+            "guardrail",
+            "token_budget",
+            passed=False,
+            tokens_used=tokens_used,
+            limit=ctx.settings.max_total_tokens,
+        )
+        calls_left = 0
+    model = with_tools(ctx.model, ctx.tools if calls_left > 0 else [])
     reply = model.invoke(messages)
     if not isinstance(reply, AIMessage):
         reply = AIMessage(content=str(reply))
@@ -215,7 +225,10 @@ def _validate(ctx: GraphContext, state: AgentState) -> AgentState:
     if draft is None:
         result = ValidationResult(passed=False, issues=["Sem rascunho válido"])
     else:
-        result = validate_report(draft, state["bundle"], state["news"], ctx.audit)
+        tool_outputs = [
+            str(m.content) for m in state.get("messages") or [] if isinstance(m, ToolMessage)
+        ]
+        result = validate_report(draft, state["bundle"], state["news"], ctx.audit, tool_outputs)
     ctx.audit.log(
         "guardrail",
         "output_validation",
@@ -241,6 +254,13 @@ def _after_validate(ctx: GraphContext, state: AgentState) -> Literal["write_repo
 def _render(ctx: GraphContext, state: AgentState) -> AgentState:
     report_path, chart_paths = write_report_files(ctx, state)
     return {"report_path": report_path, "chart_paths": chart_paths}
+
+
+def _tokens_used(audit: AuditLogger) -> int:
+    return sum(
+        int(e.payload.get("input_tokens") or 0) + int(e.payload.get("output_tokens") or 0)
+        for e in audit.of_type("llm_call")
+    )
 
 
 def _text(message: AIMessage) -> str:
