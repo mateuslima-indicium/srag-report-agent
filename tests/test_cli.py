@@ -40,6 +40,22 @@ def test_metrics_command_rejects_bad_uf(cli_settings: Settings) -> None:
     assert "Unknown UF" in result.output
 
 
+@pytest.mark.parametrize("command", ["metrics", "charts", "report"])
+def test_malformed_reference_date_fails_cleanly(cli_settings: Settings, command: str) -> None:
+    result = runner.invoke(cli.app, [command, "--reference-date", "abc"])
+    assert result.exit_code == 1
+    assert "--reference-date inválida" in result.output
+    assert "Traceback" not in result.output
+    assert not cli_settings.audit_dir.exists()
+
+
+def test_report_rejects_bad_uf_before_running(cli_settings: Settings) -> None:
+    result = runner.invoke(cli.app, ["report", "--uf", "XX", "--no-news"])
+    assert result.exit_code == 1
+    assert "Unknown UF" in result.output
+    assert not cli_settings.audit_dir.exists()
+
+
 def test_charts_command_writes_png(cli_settings: Settings, tmp_path: Path) -> None:
     result = runner.invoke(cli.app, ["charts", "--output", str(tmp_path / "c")])
     assert result.exit_code == 0

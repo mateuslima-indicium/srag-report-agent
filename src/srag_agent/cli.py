@@ -12,6 +12,7 @@ from srag_agent import __version__
 from srag_agent.config import Settings, get_settings
 from srag_agent.data.db import ensure_database, open_readonly
 from srag_agent.metrics import MetricsBundle, collect_metrics
+from srag_agent.metrics.base import scope_label, validate_uf
 from srag_agent.report.charts import plot_daily_cases, plot_monthly_cases
 
 app = typer.Typer(
@@ -44,8 +45,8 @@ def version() -> None:
 @app.command()
 def metrics(reference_date: ReferenceDateOption = None, uf: UfOption = None) -> None:
     """Calcula as métricas determinísticas e imprime uma tabela."""
-    bundle = _collect(get_settings(), reference_date, uf)
-    typer.echo(f"Data de referência: {bundle.reference_date}  |  escopo: {bundle.uf or 'Brasil'}")
+    bundle = _collect(get_settings(), *_parse_inputs(reference_date, uf))
+    typer.echo(f"Data de referência: {bundle.reference_date}  |  escopo: {scope_label(bundle.uf)}")
     typer.echo(f"{'métrica':<58} {'valor':>9} {'num':>8} {'den':>8}  janela")
     for metric in bundle.metrics:
         typer.echo(
@@ -65,24 +66,13 @@ def charts(
 ) -> None:
     """Gera os dois gráficos (PNG) do relatório."""
     settings = get_settings()
-    bundle = _collect(settings, reference_date, uf)
+    bundle = _collect(settings, *_parse_inputs(reference_date, uf))
     folder = output or settings.reports_dir
     daily = plot_daily_cases(bundle.get_series("daily_cases_30d"), folder / "casos-diarios.png")
     monthly = plot_monthly_cases(
         bundle.get_series("monthly_cases_12m"), folder / "casos-mensais.png"
     )
     typer.echo(f"{daily}\n{monthly}")
-
-
-def _collect(settings: Settings, reference_date: str | None, uf: str | None) -> MetricsBundle:
-    parsed = date.fromisoformat(reference_date) if reference_date else settings.reference_date
-    try:
-        database = ensure_database(settings.parquet_path, settings.db_path)
-        with open_readonly(database) as con:
-            return collect_metrics(con, parsed, uf)
-    except (FileNotFoundError, ValueError) as error:
-        typer.secho(str(error), fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=1) from error
 
 
 @app.command()
@@ -96,7 +86,7 @@ def report(
     from srag_agent.agent.runner import run_report
 
     settings = get_settings()
-    parsed = date.fromisoformat(reference_date) if reference_date else settings.reference_date
+    parsed_date, parsed_uf = _parse_inputs(reference_date, uf)
     if not settings.has_anthropic_key:
         typer.secho(
             "ANTHROPIC_API_KEY ausente: o relatório será gerado com o modelo fake "
@@ -105,10 +95,11 @@ def report(
             err=True,
         )
     try:
-        result = run_report(settings, parsed, uf, include_news=not no_news, output_dir=output)
+        result = run_report(
+            settings, parsed_date, parsed_uf, include_news=not no_news, output_dir=output
+        )
     except (FileNotFoundError, ValueError) as error:
-        typer.secho(str(error), fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=1) from error
+        _fail(str(error))
     status = "aprovado" if result.validation and result.validation.passed else "NÃO VERIFICADO"
     typer.echo(f"relatório: {result.report_path}")
     for chart in result.chart_paths:
@@ -118,3 +109,30 @@ def report(
         f"execução {result.run_id}: modelo {result.model}, {result.tool_calls_used} tool call(s), "
         f"{result.write_attempts} tentativa(s) de redação, validação {status}"
     )
+
+
+def _parse_inputs(reference_date: str | None, uf: str | None) -> tuple[date | None, str | None]:
+    """Input guardrail: reject a malformed date or unknown UF before touching the database."""
+    try:
+        parsed = date.fromisoformat(reference_date) if reference_date else None
+    except ValueError:
+        _fail(f"--reference-date inválida: {reference_date!r}. Use o formato YYYY-MM-DD.")
+    try:
+        return parsed, validate_uf(uf)
+    except ValueError as error:
+        _fail(str(error))
+
+
+def _collect(settings: Settings, reference_date: date | None, uf: str | None) -> MetricsBundle:
+    try:
+        database = ensure_database(settings.parquet_path, settings.db_path)
+        with open_readonly(database) as con:
+            return collect_metrics(con, reference_date, uf)
+    except (FileNotFoundError, ValueError) as error:
+        _fail(str(error))
+
+
+def _fail(message: str) -> typer.Exit:
+    """Print a red one-line error and exit with code 1 (never a traceback)."""
+    typer.secho(message, fg=typer.colors.RED, err=True)
+    raise typer.Exit(code=1)
