@@ -16,6 +16,10 @@ PRELIMINARY_DAYS = 14
 
 DEFAULT_WINDOW_DAYS = 30
 GROWTH_WINDOWS = (7, 30)
+"""Comparison windows of the case-growth metric (both are always computed)."""
+
+RATE_WINDOWS = (7, 30, 60, 90)
+"""Windows the model may request for the mortality, ICU and vaccination tools."""
 
 
 @dataclass(frozen=True)
@@ -44,6 +48,11 @@ def latest_case_date(con: duckdb.DuckDBPyConnection) -> date:
         msg = "The cases table is empty"
         raise ValueError(msg)
     return row["latest"]
+
+
+def preliminary_cutoff(con: duckdb.DuckDBPyConnection) -> date:
+    """Dates after the cutoff are still being reported (relative to the data, not to today)."""
+    return latest_case_date(con) - timedelta(days=PRELIMINARY_DAYS)
 
 
 def resolve_reference_date(con: duckdb.DuckDBPyConnection, requested: date | None) -> date:
@@ -95,3 +104,8 @@ def ratio(numerator: int, denominator: int) -> float | None:
 
 def uf_suffix(uf: str | None) -> str:
     return f" na UF {uf}" if uf else " no Brasil"
+
+
+def scope_label(uf: str | None) -> str:
+    """`UF SP` or `Brasil`, as shown in titles, charts and the CLI."""
+    return f"UF {uf}" if uf else "Brasil"

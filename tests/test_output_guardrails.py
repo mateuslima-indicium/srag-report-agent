@@ -13,14 +13,15 @@ from srag_agent.guardrails.output_validation import (
     check_caveats,
     check_clinical_advice,
     check_pii,
+    check_structure,
     validate_report,
 )
 from srag_agent.guardrails.pii import find_pii
 from srag_agent.metrics import collect_metrics
 from srag_agent.news.models import NewsBatch, NewsItem
 from srag_agent.report.models import MetricCommentary
+from tests.drafts import good_draft
 from tests.synthetic import build_synthetic_database
-from tests.test_graph import good_draft
 
 
 @pytest.fixture(scope="module")
@@ -85,6 +86,22 @@ def test_numbers_from_tool_outputs_and_news_are_accepted(bundle) -> None:
     assert check_numbers(draft, bundle, news, [sql_output, growth_output]).passed
 
 
+def test_percent_sign_is_not_required(bundle) -> None:
+    """The growth metric is +61,7%; "crescimento de 61,7%" and "-61,7%" are the same number."""
+    draft = good_draft().model_copy(
+        update={"deep_dive": "Crescimento de 61,7% em 30 dias, contra uma queda de 3,2% antes."}
+    )
+    check = check_numbers(draft, bundle, NewsBatch(), [])
+    assert check.unverified == ["3,2%"]
+
+
+def test_tool_window_sizes_are_allowed(bundle) -> None:
+    draft = good_draft().model_copy(
+        update={"deep_dive": "Na janela de 90 dias e na de 60 dias a leitura é parecida."}
+    )
+    assert check_numbers(draft, bundle, NewsBatch(), []).passed
+
+
 def test_rounding_tolerance(bundle) -> None:
     draft = good_draft().model_copy(update={"deep_dive": "Mortalidade de 11,7% (84 casos)."})
     assert check_numbers(draft, bundle, NewsBatch(), []).passed  # 11.8 - 0.1, 85 - 1
@@ -130,6 +147,21 @@ def test_population_level_language_is_allowed() -> None:
         update={"deep_dive": "A vacinação contra gripe segue recomendada pelo PNI para idosos."}
     )
     assert check_clinical_advice(draft).passed
+
+
+def test_language_is_checked_per_field(bundle) -> None:
+    english = good_draft().model_copy(
+        update={
+            "executive_summary": (
+                "The mortality rate among cases with a known outcome is 11.8% and cases "
+                "increased with the reporting delay; however, vaccination remains low."
+            )
+        }
+    )
+    result = check_structure(english, bundle, NewsBatch())
+    assert result.checks["language_pt_br"] is False
+    assert "executive_summary" in result.issues[0]
+    assert check_structure(good_draft(), bundle, NewsBatch()).checks["language_pt_br"] is True
 
 
 def test_caveats_must_be_mentioned() -> None:

@@ -13,7 +13,13 @@ from pydantic import BaseModel, Field
 
 from srag_agent.audit import AuditLogger
 from srag_agent.data.schema import BRAZIL_UFS
-from srag_agent.metrics.base import resolve_reference_date, validate_uf
+from srag_agent.metrics.base import (
+    DEFAULT_WINDOW_DAYS,
+    GROWTH_WINDOWS,
+    RATE_WINDOWS,
+    resolve_reference_date,
+    validate_uf,
+)
 from srag_agent.metrics.cases import case_growth
 from srag_agent.metrics.icu import icu_rate
 from srag_agent.metrics.models import MetricResult, SeriesResult
@@ -22,6 +28,8 @@ from srag_agent.metrics.series import daily_cases, monthly_cases
 from srag_agent.metrics.vaccination import covid_vaccination_rate, flu_vaccination_rate
 
 Uf = Literal[BRAZIL_UFS]  # type: ignore[valid-type]
+GrowthWindow = Literal[GROWTH_WINDOWS]  # type: ignore[valid-type]
+RateWindow = Literal[RATE_WINDOWS]  # type: ignore[valid-type]
 
 
 class MetricInput(BaseModel):
@@ -32,11 +40,13 @@ class MetricInput(BaseModel):
 
 
 class GrowthInput(MetricInput):
-    window_days: Literal[7, 30] = Field(default=30, description="Janela de comparação em dias.")
+    window_days: GrowthWindow = Field(
+        default=DEFAULT_WINDOW_DAYS, description="Janela de comparação em dias."
+    )
 
 
 class RateInput(MetricInput):
-    window_days: Literal[7, 30, 60, 90] = Field(default=30, description="Janela em dias.")
+    window_days: RateWindow = Field(default=DEFAULT_WINDOW_DAYS, description="Janela em dias.")
 
 
 MetricFn = Callable[..., MetricResult | SeriesResult | list[MetricResult]]
@@ -55,7 +65,7 @@ def build_metric_tools(con: duckdb.DuckDBPyConnection, audit: AuditLogger) -> li
                 uf = validate_uf(kwargs.pop("uf", None))
                 result = compute(con, reference, uf=uf, **kwargs)
             except ValueError as error:
-                audit.log("tool_call", name, args=_safe(kwargs), error=str(error))
+                audit.log("tool_call", name, args=_json_ready(kwargs), error=str(error))
                 return f"ERRO: {error}"
             payload = (
                 "[" + ",".join(r.model_dump_json() for r in result) + "]"
@@ -65,7 +75,7 @@ def build_metric_tools(con: duckdb.DuckDBPyConnection, audit: AuditLogger) -> li
             audit.log(
                 "tool_call",
                 name,
-                args={"reference_date": reference.isoformat(), "uf": uf, **_safe(kwargs)},
+                args={"reference_date": reference.isoformat(), "uf": uf, **_json_ready(kwargs)},
                 result_chars=len(payload),
                 duration_ms=round((time.perf_counter() - started) * 1000),
             )
@@ -81,26 +91,32 @@ def build_metric_tools(con: duckdb.DuckDBPyConnection, audit: AuditLogger) -> li
             "Taxa de aumento de casos de SRAG: casos nos últimos N dias sobre os N dias "
             "anteriores, menos 1. Inclui o valor sobre dados consolidados e os caveats.",
             GrowthInput,
-            lambda con, ref, uf, window_days=30: case_growth(con, ref, window_days, uf),
+            lambda con, ref, uf, window_days=DEFAULT_WINDOW_DAYS: case_growth(
+                con, ref, window_days, uf
+            ),
         ),
         wrap(
             "get_mortality_rate",
             "Taxa de mortalidade entre casos de SRAG com desfecho conhecido na janela.",
             RateInput,
-            lambda con, ref, uf, window_days=30: mortality_rate(con, ref, window_days, uf),
+            lambda con, ref, uf, window_days=DEFAULT_WINDOW_DAYS: mortality_rate(
+                con, ref, window_days, uf
+            ),
         ),
         wrap(
             "get_icu_rate",
             "Proporção de internados por SRAG que foram para UTI na janela (proxy de UTI).",
             RateInput,
-            lambda con, ref, uf, window_days=30: icu_rate(con, ref, window_days, uf),
+            lambda con, ref, uf, window_days=DEFAULT_WINDOW_DAYS: icu_rate(
+                con, ref, window_days, uf
+            ),
         ),
         wrap(
             "get_vaccination_rates",
             "Proporção de casos de SRAG vacinados (covid-19 e gripe) na janela; proxy, não "
             "cobertura populacional.",
             RateInput,
-            lambda con, ref, uf, window_days=30: [
+            lambda con, ref, uf, window_days=DEFAULT_WINDOW_DAYS: [
                 covid_vaccination_rate(con, ref, window_days, uf),
                 flu_vaccination_rate(con, ref, window_days, uf),
             ],
@@ -120,7 +136,8 @@ def build_metric_tools(con: duckdb.DuckDBPyConnection, audit: AuditLogger) -> li
     ]
 
 
-def _safe(kwargs: dict[str, object]) -> dict[str, object]:
+def _json_ready(kwargs: dict[str, object]) -> dict[str, object]:
+    """Tool arguments as they go into the audit trail (dates in ISO format)."""
     return {
         key: (value.isoformat() if isinstance(value, date) else value)
         for key, value in kwargs.items()

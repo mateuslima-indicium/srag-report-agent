@@ -11,7 +11,7 @@ import json
 import re
 from dataclasses import dataclass, field
 
-from srag_agent.metrics.base import PRELIMINARY_DAYS
+from srag_agent.metrics.base import GROWTH_WINDOWS, PRELIMINARY_DAYS, RATE_WINDOWS
 from srag_agent.metrics.models import MetricsBundle
 from srag_agent.news.models import NewsBatch
 from srag_agent.report.models import ReportContent
@@ -91,9 +91,8 @@ def allowed_values(
     bundle: MetricsBundle, news: NewsBatch, tool_outputs: list[str]
 ) -> tuple[set[int], set[float]]:
     """All numbers the writer may legitimately quote."""
-    integers: set[int] = set()
+    integers: set[int] = {PRELIMINARY_DAYS, *GROWTH_WINDOWS, *RATE_WINDOWS}
     percents: set[float] = {0.0}
-    integers.update({PRELIMINARY_DAYS, len(bundle.series[0].points) if bundle.series else 0})
     for metric in bundle.metrics:
         window_days = (metric.window_end - metric.window_start).days + 1
         integers.update({metric.numerator, metric.denominator, window_days})
@@ -142,7 +141,9 @@ def _absorb_tool_output(output: str, integers: set[int], percents: set[float]) -
 
 
 def _close_percent(value: float, allowed: set[float]) -> bool:
-    return any(abs(value - candidate) <= PERCENT_TOLERANCE + 1e-9 for candidate in allowed)
+    """Sign-insensitive: "queda de 3,2%" is the same number as the metric's "-3,2%"."""
+    magnitude = abs(value)
+    return any(abs(magnitude - abs(candidate)) <= PERCENT_TOLERANCE + 1e-9 for candidate in allowed)
 
 
 def _close_integer(value: int, allowed: set[int]) -> bool:

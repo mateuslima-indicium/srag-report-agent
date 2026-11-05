@@ -65,10 +65,33 @@ class ValidationResult(BaseModel):
             self.issues.append(issue or check)
 
 
+MIN_CHARS_FOR_LANGUAGE_CHECK = 40
+
+
 def _looks_portuguese(text: str) -> bool:
     english = len(_ENGLISH_MARKERS.findall(text))
     portuguese = len(_PORTUGUESE_MARKERS.findall(text))
     return portuguese >= english
+
+
+def _non_portuguese_fields(draft: ReportContent) -> list[str]:
+    """Each free-text field is checked on its own, so one English section cannot hide
+    behind the Portuguese majority of the rest of the report."""
+    fields = {
+        "executive_summary": draft.executive_summary,
+        "deep_dive": draft.deep_dive,
+        "news_context": draft.news_context,
+        **{
+            f"section:{s.metric_name}": f"{s.headline} {s.interpretation}"
+            for s in draft.metric_sections
+        },
+        "limitations": " ".join(draft.limitations),
+    }
+    return [
+        name
+        for name, text in fields.items()
+        if len(text.strip()) >= MIN_CHARS_FOR_LANGUAGE_CHECK and not _looks_portuguese(text)
+    ]
 
 
 def check_structure(
@@ -99,10 +122,11 @@ def check_structure(
         not bad_refs and not bad_inline,
         f"Citações de notícias inexistentes: {bad_refs + bad_inline}",
     )
+    foreign = _non_portuguese_fields(draft)
     result.add(
         "language_pt_br",
-        _looks_portuguese(draft_text(draft)),
-        "Texto não parece estar em português",
+        not foreign,
+        f"Campos que não parecem estar em português: {foreign}",
     )
     result.add("limitations_present", bool(draft.limitations), "Seção de limitações vazia")
     return result
@@ -128,10 +152,9 @@ def check_caveats(draft: ReportContent) -> ValidationResult:
 def check_clinical_advice(draft: ReportContent) -> ValidationResult:
     result = ValidationResult(passed=True)
     text = draft_text(draft)
-    hits = [pattern.pattern[:40] for pattern in CLINICAL_ADVICE_PATTERNS if pattern.search(text)]
     result.add(
         "no_clinical_advice",
-        not hits,
+        not any(pattern.search(text) for pattern in CLINICAL_ADVICE_PATTERNS),
         "Texto contém recomendação clínica individual; descreva apenas tendências populacionais",
     )
     return result
