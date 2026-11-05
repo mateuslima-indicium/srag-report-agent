@@ -15,12 +15,12 @@ linha é um `AuditEvent` com `ts`, `run_id`, `seq`, `type`, `name` e `payload`.
 | `tool_call` | tools e nó `collect_metrics` | nome, argumentos (datas em ISO), tamanho/linhas do resultado, duração; para SQL, o texto da consulta e o `purpose` declarado pelo modelo |
 | `guardrail` | `sql_guard`, `tool_budget`, `token_budget`, validação de saída (um evento por check) e `max_write_attempts` | `passed`, motivo, detalhes (ex.: números sem origem, relações referenciadas) |
 | `llm_call` | `agent/callbacks.py` (callback do LangChain) | modelo, hash SHA-256 do prompt, quantidade de mensagens, tokens de entrada/saída, latência, tool calls pedidas, `stop_reason` |
-| `decision` | nós `analyze` e `write_report` | texto em que o modelo explica quais consultas fez e por quê, quais notícias considerou relevantes e quais descartou; notícias citadas e limitações do rascunho |
+| `decision` | nós `analyze` e `write_report` | texto integral em que o modelo explica quais consultas fez e por quê, quais notícias considerou relevantes e quais descartou; notícias citadas e limitações do rascunho |
 | `news_fetch` | nó `fetch_news` | consultas, itens aceitos (id, fonte, título), itens descartados com motivo, erros |
 | `error` | qualquer nó | exceções de ferramenta, de parsing da saída estruturada ou da API |
 | `run_end` | `agent/runner.py` | status (`ok` / `unverified` / `error`), caminho do relatório, totais de chamadas e tokens |
 
-Exemplo real versionado: [`../audit/sample-run.jsonl`](../audit/sample-run.jsonl) (31 eventos,
+Exemplo real versionado: [`../audit/sample-run.jsonl`](../audit/sample-run.jsonl) (32 eventos,
 inclusive uma reprovação do guardrail numérico seguida de regeneração).
 
 Nada sensível entra na trilha: chaves ficam em `SecretStr` e nunca são serializadas; resultados
@@ -37,7 +37,8 @@ justificativa de cada uma. O relatório final mostra, na tabela de notícias, qu
 
 A seção **"Como este relatório foi produzido"** de cada Markdown lista: id da execução, versão
 do software, caminho e hash do Parquet, data do último caso, modelo e tokens, número de tool
-calls, consultas de notícias, caminho do JSONL, cada guardrail executado com resultado e os
+calls pedidas pelo modelo, provedores e consultas de notícias, caminho do JSONL, cada guardrail
+executado com resultado e os
 checks da validação final. Se a validação não passou após as tentativas, um banner no topo
 marca o texto como **não verificado** e a seção "Problemas apontados pelos guardrails" lista o
 que não bateu. Os números da tabela e dos gráficos continuam válidos nesse caso, porque não

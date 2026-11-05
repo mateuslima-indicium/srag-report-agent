@@ -59,7 +59,7 @@ httpx + feedparser, pydantic, typer, pytest + ruff.
 |---|---|
 | `uv` (gerenciador de ambiente Python) | Linux/macOS: `curl -LsSf https://astral.sh/uv/install.sh \| sh`. Windows (PowerShell): `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 \| iex"`. Guia: https://docs.astral.sh/uv/getting-started/installation/ |
 | Python 3.13 | Não precisa instalar à parte: `uv sync` baixa a versão indicada em `.python-version` se ela não existir na máquina. |
-| Chave da API da Anthropic | Crie em https://console.anthropic.com/settings/keys (conta com créditos). Uma execução completa custa poucos centavos de dólar no Sonnet 5.5 (cerca de 30 a 45 mil tokens de entrada e 10 mil de saída). |
+| Chave da API da Anthropic | Crie em https://platform.claude.com/settings/keys (conta com créditos). Uma execução completa custa poucos centavos de dólar no Sonnet 5.5 (cerca de 25 a 35 mil tokens de entrada e 8 a 13 mil de saída). |
 | Git | Para clonar o repositório. |
 
 Não é preciso baixar dados: o dataset tratado e de-identificado (`data/processed/srag.parquet`,
@@ -127,11 +127,15 @@ uv run python scripts/build_dataset.py    # limpa, remove PII, grava Parquet + D
 ### 6. Rodar os testes e regenerar o diagrama (opcional)
 
 ```bash
-uv run pytest                                   # 129 testes, sem rede e sem chave
+uv run pytest                                   # 145 testes, sem rede e sem chave
 uv run pytest -m live                           # smoke test real contra a API (pulado sem chave)
 uv run ruff check . && uv run ruff format --check .
 uv run python scripts/render_architecture.py   # regenera docs/architecture.pdf
 ```
+
+Entradas inválidas (`--uf XX`, `--reference-date abc` ou uma data posterior ao último caso)
+terminam com uma linha de erro em vermelho e código de saída 1, antes de abrir o banco ou chamar
+o modelo.
 
 ### Variáveis de ambiente
 
@@ -202,10 +206,10 @@ validação. Detalhes em [`docs/governance.md`](docs/governance.md).
 
 | Camada | O que impede |
 |---|---|
-| Entrada | UF fora da lista, janelas inválidas, datas futuras (CLI e schemas Pydantic das tools) |
-| SQL (`sql_guard`) | mais de um statement, qualquer coisa que não seja `SELECT`, leitura de arquivos, tabelas fora da whitelist, resultados sem `LIMIT`; conexão read-only com acesso a arquivos desligado no motor; timeout |
+| Entrada | UF fora da lista, data malformada ou futura, janelas inválidas (CLI e schemas Pydantic das tools) |
+| SQL (`sql_guard`) | mais de um statement, qualquer coisa que não seja `SELECT`, leitura de arquivos, funções de tabela, relações fora da whitelist (extraídas do AST do DuckDB, o que cobre subconsultas e junções por vírgula), resultados sem `LIMIT`; conexão read-only com acesso a arquivos desligado no motor; timeout |
 | Notícias | HTML, textos longos, injeção de prompt (10 padrões pt/en com normalização unicode); conteúdo entregue ao LLM como dado delimitado |
-| Saída | estrutura, ressalva obrigatória por métrica, recomendação clínica individual, PII, **consistência numérica** (todo número do texto precisa existir nas métricas, séries, resultados de tools ou títulos de notícias; tolerância 0,1 p.p. / 1 unidade) |
+| Saída | estrutura, idioma pt-BR conferido campo a campo, ressalva obrigatória por métrica, recomendação clínica individual, PII, **consistência numérica** (todo número do texto precisa existir nas métricas, séries, resultados de tools ou títulos de notícias; tolerância 0,1 p.p. / 1 unidade, sinal ignorado em percentuais) |
 | Orçamentos | `max_tool_calls`, `max_total_tokens`, `max_write_attempts`, limite de recursão, retries com backoff do SDK |
 
 Saída reprovada volta para o redator com o feedback; esgotadas as tentativas, o relatório sai
@@ -214,7 +218,7 @@ teste de cada guardrail, em [`docs/guardrails.md`](docs/guardrails.md).
 
 ## Dados sensíveis
 
-O pipeline carrega só 30 das 194 colunas e descarta explicitamente quase-identificadores (data
+O pipeline lê só 27 das 194 colunas, grava 29 e descarta explicitamente quase-identificadores (data
 de nascimento, raça/cor, etnia, ocupação, gestação, IMC), texto livre, localização abaixo de UF,
 lotes de vacina e o número da notificação (substituído por hash truncado). A idade vira faixa
 de 10 anos. Um teste garante que nenhuma coluna da lista de privacidade existe no Parquet. O
@@ -224,19 +228,21 @@ LLM só recebe agregados; o guardrail de PII é a última barreira no texto. Cha
 ## Testes e qualidade
 
 ```bash
-uv run pytest                 # 129 testes, sem rede e sem chave (modelo fake, HTTP mockado)
+uv run pytest                 # 145 testes, sem rede e sem chave (modelo fake, HTTP mockado)
 uv run pytest -m live         # smoke test real contra a API (pulado sem chave)
 uv run ruff check . && uv run ruff format --check .
 ```
 
-Cobertura de 97% (`uv run pytest --cov=srag_agent`). Os testes cobrem: limpeza e build do
-dataset num CSV sintético (dois formatos de data, anos absurdos, duplicatas, remoção de PII),
-métricas num dataset sintético com valores calculados à mão, gráficos, 40 casos de SQL
-aceito/rejeitado, fixture real do RSS do Google News com mocks `respx`, casos de injeção
-(inclusive evasão por unicode), cada guardrail de saída, e o grafo de ponta a ponta com um
-modelo fake roteirizado (tool calls, número inventado → regeneração, falha persistente →
-"não verificado", orçamento de tools, recorte por UF). A CI (`.github/workflows/ci.yml`) roda
-lint, formatação e testes a cada push.
+Cobertura de 97% (`uv run pytest --cov=srag_agent`). O smoke test `live` fica fora da seleção
+padrão, então `uv run pytest` nunca chama a API mesmo com a chave configurada. Os testes cobrem:
+limpeza e build do dataset num CSV sintético (dois formatos de data, anos absurdos, duplicatas,
+remoção de PII), métricas num dataset sintético com valores calculados à mão, gráficos, 47
+casos de SQL aceito/rejeitado (inclusive junções por vírgula e funções de tabela), fixture real
+do RSS do Google News com mocks `respx`, casos de injeção (inclusive evasão por unicode), cada
+guardrail de saída, entradas inválidas na CLI, e o grafo de ponta a ponta com um modelo fake
+roteirizado (tool calls, número inventado → regeneração, falha persistente → "não verificado",
+orçamento de tools, recorte por UF, decisão completa na auditoria). A CI
+(`.github/workflows/ci.yml`) roda lint, formatação e testes a cada push.
 
 Convenções de código: módulos pequenos com uma responsabilidade, funções puras onde possível,
 tipagem completa, `ruff` (E, F, I, UP, B, SIM) limpo, código e identificadores em inglês,
@@ -248,7 +254,7 @@ documentação, prompts e relatório em português.
 - **Subnotificação recente**: o agente marca e explica, mas não faz *nowcasting*. Um modelo de correção de atraso (como o do InfoGripe) seria o próximo passo.
 - **Notícias**: o Google News RSS entrega título, fonte e data, raramente um resumo; o texto das matérias não é lido. Tavily (opcional) traz trechos. Não há verificação de fatos das manchetes, apenas confronto com os números do banco.
 - **Sem interface web**: a entrega é CLI + Markdown; uma UI (Streamlit) seria simples de acoplar sobre `run_report`.
-- **Custo**: uma execução usa cerca de 30 a 45 mil tokens de entrada e 10 mil de saída no Sonnet 5.5 (3 a 4 chamadas).
+- **Custo**: uma execução usa cerca de 25 a 35 mil tokens de entrada e 8 a 13 mil de saída no Sonnet 5.5 (3 a 4 chamadas; a quarta só acontece quando os guardrails pedem uma segunda redação).
 
 ## Estrutura do repositório
 
@@ -272,14 +278,14 @@ documentação, prompts e relatório em português.
 ├── src/srag_agent/
 │   ├── cli.py / config.py
 │   ├── data/        schema, cleaning, pipeline, db
-│   ├── metrics/     cases, mortality, icu, vaccination, series, collect, models
+│   ├── metrics/     base, cases, mortality, icu, vaccination, series, collect, models
 │   ├── news/        google_news_rss, tavily, sanitize, fetch, models
 │   ├── tools/       metrics_tools, sql_tool, news_tool
 │   ├── agent/       state, prompts, llm, callbacks, graph, runner
 │   ├── guardrails/  sql_guard, injection, numeric_consistency, pii, output_validation
 │   ├── audit/       events, logger
 │   └── report/      charts, models, render
-├── tests/           espelha src; fixtures (CSV sintético, RSS real); dataset sintético
+├── tests/           espelha src; fixtures (CSV sintético, RSS real); dataset sintético; rascunhos
 ├── reports/         exemplo-2026-11-01.md + PNG (saídas novas são ignoradas pelo Git)
 └── audit/           sample-run.jsonl (demais execuções ignoradas pelo Git)
 ```

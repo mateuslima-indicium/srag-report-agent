@@ -7,8 +7,9 @@ O projeto trata isso em quatro camadas.
 
 ## 1. O que nunca entra no dataset processado
 
-`scripts/build_dataset.py` lê apenas as colunas de `schema.RAW_COLUMNS_TO_READ`; todo o resto do
-CSV (194 colunas) nem é carregado. A lista `schema.PRIVACY_DROPPED_COLUMNS` documenta o que é
+`scripts/build_dataset.py` lê apenas as 27 colunas de `schema.RAW_COLUMNS_TO_READ`; todo o
+resto do CSV (194 colunas) nem é carregado. Duas das colunas lidas (`NU_NOTIFIC` e
+`NU_IDADE_N`) não são gravadas: servem só para derivar o hash de deduplicação e a idade. A lista `schema.PRIVACY_DROPPED_COLUMNS` documenta o que é
 descartado explicitamente, e um teste (`test_pipeline.py`) falha se qualquer uma aparecer no
 Parquet:
 
@@ -26,7 +27,7 @@ Transformações nas colunas mantidas:
 - Localização fica apenas na UF (`sg_uf_not`, `sg_uf`).
 - Datas implausíveis (ano 8202, datas futuras) viram nulo; vacinação só aceita datas a partir de 2020-12.
 
-Resultado: 577.038 linhas e 30 colunas, sem nenhum campo que identifique uma pessoa.
+Resultado: 577.038 linhas e 29 colunas, sem nenhum campo que identifique uma pessoa.
 O Parquet versionado (`data/processed/srag.parquet`, 12 MB) é esse dataset; os CSVs brutos
 ficam fora do repositório (`.gitignore`).
 
