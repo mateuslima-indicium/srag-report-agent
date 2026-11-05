@@ -2,7 +2,7 @@
 
 > Produzido em 2026-11-05 a partir do enunciado (`docs/ENUNCIADO-DESAFIO.md`), do perfil
 > completo dos CSVs em `data/raw/` e de uma sessão de decisões com o autor do projeto.
-> Este documento é a fonte de verdade para o workflow de desenvolvimento (`WORKFLOW.md`).
+> Este documento foi a fonte de verdade durante o desenvolvimento.
 
 ## 1. O que o desafio pede, lido com cuidado
 

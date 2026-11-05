@@ -197,8 +197,7 @@ documentação, prompts e relatório em português.
 │   ├── governance.md / guardrails.md / data-privacy.md
 │   ├── data-quality.md          # gerado pelo build
 │   ├── 01-analise-e-decisoes.md # análise do enunciado, perfil dos dados, decisões
-│   ├── ENUNCIADO-DESAFIO.md
-│   └── PROGRESS.md              # diário de construção por fase
+│   └── ENUNCIADO-DESAFIO.md
 ├── data/
 │   ├── raw/                     # CSVs (gitignored), README com as URLs, dicionário PDF
 │   └── processed/srag.parquet   # dataset tratado e de-identificado (versionado)
