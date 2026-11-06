@@ -9,8 +9,8 @@ de ocupação de UTI e taxa de vacinação), dois gráficos (casos diários nos 
 mensais nos últimos 12 meses), a interpretação de cada número à luz das notícias, e uma seção de
 proveniência que explica como tudo foi produzido.
 
-- Exemplo real gerado pelo agente: [`reports/exemplo-2026-11-01.md`](reports/exemplo-2026-11-01.md)
-  (com [a trilha de auditoria correspondente](audit/sample-run.jsonl)).
+- Exemplo real gerado pelo agente: [`reports/exemplo/relatorio-srag-2026-11-01.md`](reports/exemplo/relatorio-srag-2026-11-01.md)
+  (com [a trilha de auditoria correspondente](audit/exemplo/run-20261106T000314Z-8e0cceae.jsonl); os dois arquivos são a saída da CLI, copiada sem edição).
 - Diagrama de arquitetura: [`docs/architecture.md`](docs/architecture.md) e [`docs/architecture.pdf`](docs/architecture.pdf).
 
 ## Como funciona em uma frase
@@ -152,6 +152,7 @@ Todas opcionais exceto a chave; definidas no `.env` ou no ambiente.
 | `SQL_ROW_LIMIT` | 200 | linhas máximas devolvidas por `run_readonly_sql` |
 | `MAX_WRITE_ATTEMPTS` | 3 | tentativas de redação antes de marcar o relatório como não verificado |
 | `MAX_TOTAL_TOKENS` | 200000 | orçamento de tokens por execução; acima dele as ferramentas são desligadas |
+| `AUDIT_DIR` | `audit` | pasta das trilhas de auditoria (o exemplo versionado foi gerado com `AUDIT_DIR=audit/exemplo`) |
 
 ### Problemas comuns
 
@@ -192,7 +193,7 @@ janela, definição em português e ressalvas, que o relatório sempre exibe.
 | Série diária / mensal | casos por dia nos 30 dias até a referência; casos por mês nos 12 meses completos anteriores | períodos preliminares sombreados |
 
 Os valores na execução de exemplo (Brasil, referência 01/11/2026) estão na tabela do
-[relatório](reports/exemplo-2026-11-01.md#métricas).
+[relatório](reports/exemplo/relatorio-srag-2026-11-01.md#métricas).
 
 ## Governança e transparência
 
@@ -293,8 +294,8 @@ documentação, prompts e relatório em português.
 │   ├── audit/       events, logger
 │   └── report/      charts, models, render
 ├── tests/           espelha src; fixtures (CSV sintético, RSS real); dataset sintético; rascunhos
-├── reports/         exemplo-2026-11-01.md + PNG (saídas novas são ignoradas pelo Git)
-└── audit/           sample-run.jsonl (demais execuções ignoradas pelo Git)
+├── reports/exemplo/ relatório de exemplo + 2 PNG (saídas novas são ignoradas pelo Git)
+└── audit/exemplo/   trilha da execução de exemplo (demais execuções ignoradas pelo Git)
 ```
 
 ## Licença

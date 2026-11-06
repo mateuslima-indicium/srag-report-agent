@@ -35,8 +35,7 @@ Vale dizer o que fica fora, para que ninguém leia mais do que existe:
 - `metric_caveats` é uma busca por palavras-chave; garante que a ressalva foi mencionada, não que foi bem interpretada.
 - Números escritos por extenso ("três mil") e inteiros abaixo de 13 não são conferidos.
 
-## Exemplo real
+## Exemplos reais
 
-Na execução `a8d908d9` (ver `audit/sample-run.jsonl`), a primeira redação citou "600" ao
-descrever a série diária (um valor lido a olho). `numeric_consistency` conferiu 149 números,
-apontou esse único sem origem, e a segunda redação passou nos 9 checks.
+- Na execução versionada (`audit/exemplo/run-20261106T000314Z-8e0cceae.jsonl`) a primeira redação passou nos 9 checks; `sql_guard` aprovou a consulta agregada por classificação final.
+- Em execuções de validação anteriores, `numeric_consistency` reprovou primeiras redações que citavam um valor lido a olho na série diária ("600") e números fora das ferramentas ("1100", "1600"); a segunda redação, com o feedback, passou. O mesmo caminho é coberto por `test_graph.py` (regeneração e banner "não verificado").

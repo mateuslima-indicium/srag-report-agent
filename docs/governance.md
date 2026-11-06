@@ -20,8 +20,13 @@ linha é um `AuditEvent` com `ts`, `run_id`, `seq`, `type`, `name` e `payload`.
 | `error` | qualquer nó | exceções de ferramenta, de parsing da saída estruturada ou da API |
 | `run_end` | `agent/runner.py` | status (`ok` / `unverified` / `error`), caminho do relatório, totais de chamadas e tokens |
 
-Exemplo real versionado: [`../audit/sample-run.jsonl`](../audit/sample-run.jsonl) (32 eventos,
-inclusive uma reprovação do guardrail numérico seguida de regeneração).
+Exemplo real versionado:
+[`../audit/exemplo/run-20261106T000314Z-8e0cceae.jsonl`](../audit/exemplo/run-20261106T000314Z-8e0cceae.jsonl)
+(21 eventos), a trilha exata do relatório
+[`../reports/exemplo/relatorio-srag-2026-11-01.md`](../reports/exemplo/relatorio-srag-2026-11-01.md).
+Os dois foram gerados num clone limpo com
+`AUDIT_DIR=audit/exemplo uv run srag-agent report --output reports/exemplo` e versionados sem
+edição; o `run_id` e o caminho da trilha citados no relatório batem com o arquivo.
 
 Com isso cada frase do relatório é rastreável sem rodar nada: o número vem de um `tool_call`
 (resultado gravado), a leitura vem de um `decision` (texto integral e rascunho) e a aprovação

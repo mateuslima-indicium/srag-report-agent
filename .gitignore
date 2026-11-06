@@ -19,7 +19,7 @@ __pycache__/
 dist/
 build/
 
-# Logs de auditoria gerados localmente (amostra versionada fica em reports/)
+# Logs de auditoria gerados localmente (a execução de exemplo fica em audit/exemplo/)
 audit/*.jsonl
 
 # IDE / SO
@@ -28,15 +28,12 @@ audit/*.jsonl
 .DS_Store
 Thumbs.db
 
-# Amostra de auditoria versionada
-!audit/sample-run.jsonl
-
 # Saida do build (regenerada por scripts/build_dataset.py)
 data/processed/*.tmp
 
 # Relatorios gerados localmente (so o exemplo e versionado)
 reports/*
-!reports/exemplo-*
+!reports/exemplo/
 
 # Cobertura
 .coverage
